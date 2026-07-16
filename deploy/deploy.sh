@@ -45,8 +45,9 @@ compose pull memoir-api
 compose up -d --remove-orphans
 
 for i in $(seq 1 40); do
-  if curl -fsS http://127.0.0.1:18080/health >/dev/null 2>&1; then
-    printf '[OK] memoir-api is healthy on host port 18080\n'
+  if compose exec -T memoir-api \
+    curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
+    printf '[OK] memoir-api is healthy inside its container\n'
     compose ps
     exit 0
   fi

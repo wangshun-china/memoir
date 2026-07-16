@@ -36,7 +36,7 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
-      - "${MEMOIR_API_HOST_PORT:-18080}:8080"
+      - "${MEMOIR_API_BIND_HOST:-172.17.0.1}:${MEMOIR_API_HOST_PORT:-18080}:8080"
     depends_on:
       postgres:
         condition: service_healthy

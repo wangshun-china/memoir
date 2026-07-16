@@ -114,6 +114,7 @@ jobs:
             printf 'MEMOIR_PG_USER=memoir\n'
             printf 'MEMOIR_PG_PASSWORD=%s\n' "$MEMOIR_PG_PASSWORD"
             printf 'MEMOIR_PG_DB=memoir\n'
+            printf 'MEMOIR_API_BIND_HOST=172.17.0.1\n'
             printf 'MEMOIR_API_HOST_PORT=18080\n'
             printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
             printf 'RUST_LOG=info\n'

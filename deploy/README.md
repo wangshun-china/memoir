@@ -32,5 +32,6 @@ https://api.wangshun.work
   -> memoir-postgres:5432
 ```
 
-生产 PostgreSQL 不映射宿主机端口。`18080` 仅用于共享 nginx 网关转发，
-应通过云防火墙限制直接公网访问。
+生产 PostgreSQL 不映射宿主机端口。API 只绑定 Docker 宿主网关
+`172.17.0.1:18080`，供共享 nginx 通过 `host.docker.internal` 转发，
+不直接绑定服务器公网网卡。
