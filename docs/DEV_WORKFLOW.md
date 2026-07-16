@@ -68,12 +68,9 @@ git push main
 
 镜像标签使用完整 Git commit SHA，便于定位和回滚。
 
-Actions 需要以下 GitHub Secrets：
+部署 job 运行在组织级 `[self-hosted, aliyun]` Runner 上。Actions 需要以下
+GitHub Secrets：
 
-- `PROD_SSH_HOST`
-- `PROD_SSH_USER`
-- `PROD_SSH_PRIVATE_KEY`
-- `PROD_SSH_KNOWN_HOSTS`
 - `MEMOIR_PG_PASSWORD`
 - `JWT_SECRET`
 - `LLM_API_BASE`

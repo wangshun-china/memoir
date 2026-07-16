@@ -43,7 +43,7 @@ API Key 仍来自 gitignored 的 `.env.development`。
 ```
 
 - `local`：自动生成 `http://<WSL_IP>:18081/api/v1`
-- `remote`：`https://api.wangshun.work/api/v1`
+- `remote`：`http://api.wangshun.work/api/v1`（Stage 1，后续切换 HTTPS）
 
 生成的 `miniprogram/config/env.ts` 不提交。小程序中不得放入 AppSecret、
 LLM Key、JWT Secret 或数据库密码。

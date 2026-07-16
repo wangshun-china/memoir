@@ -92,30 +92,20 @@ jobs:
     name: Deploy production
     if: github.event_name != 'pull_request' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, aliyun]
     environment: production
     env:
-      SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-      SSH_USER: ${{ secrets.PROD_SSH_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
-      SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
       MEMOIR_PG_PASSWORD: ${{ secrets.MEMOIR_PG_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL || 'gpt-4o-mini' }}
       WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
       WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
       GHCR_TOKEN: ${{ github.token }}
       RELEASE_IMAGE: ${{ needs.build.outputs.image }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare SSH
-        run: |
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
       - name: Prepare deployment environment
         run: |
           install -d -m 700 .deploy
@@ -134,23 +124,23 @@ jobs:
             printf 'WECHAT_APP_SECRET=%s\n' "$WECHAT_APP_SECRET"
           } > .deploy/runtime.env
           printf 'MEMOIR_API_IMAGE=%s\n' "$RELEASE_IMAGE" > .deploy/release.env
-      - name: Upload deployment files
+      - name: Install deployment files
         run: |
-          ssh "$SSH_USER@$SSH_HOST" "install -d -m 700 /opt/memoir/deploy"
-          scp deploy/docker-compose.yml deploy/deploy.sh "$SSH_USER@$SSH_HOST:/opt/memoir/deploy/"
-          scp .deploy/runtime.env "$SSH_USER@$SSH_HOST:/opt/memoir/deploy/.env.next"
-          scp .deploy/release.env "$SSH_USER@$SSH_HOST:/opt/memoir/deploy/.release.env.next"
+          install -d -m 700 /opt/memoir/deploy
+          install -m 644 deploy/docker-compose.yml /opt/memoir/deploy/docker-compose.yml
+          install -m 700 deploy/deploy.sh /opt/memoir/deploy/deploy.sh
+          install -m 600 .deploy/runtime.env /opt/memoir/deploy/.env.next
+          install -m 600 .deploy/release.env /opt/memoir/deploy/.release.env.next
       - name: Pull and deploy immutable image
         run: |
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           printf '%s' "$GHCR_TOKEN" |
-            ssh "$SSH_USER@$SSH_HOST" "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
-          ssh "$SSH_USER@$SSH_HOST" '
-            set -e
-            cd /opt/memoir/deploy
-            chmod 700 deploy.sh
-            chmod 600 .env.next .release.env.next
-            mv .env.next .env
-            ./deploy.sh
-          '
+            docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          cd /opt/memoir/deploy
+          mv .env.next .env
+          ./deploy.sh
       - name: Verify public API
-        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors https://api.wangshun.work/health
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors \
+            http://api.wangshun.work/health |
+            grep -q '"service":"memoir-server"'
