@@ -1,0 +1,41 @@
+<navigation-bar title="我的回忆录" back="{{false}}" color="black" background="#F7F3EA"></navigation-bar>
+
+<view class="page">
+  <view class="hero">
+    <text class="hero-title">把人生故事慢慢说清楚</text>
+    <text class="hero-sub">文字采访 · 整理成章 · 留给家人</text>
+  </view>
+
+  <view class="toolbar">
+    <button class="btn-primary" bindtap="onCreate">创建一本回忆录</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="error">{{error}}</view>
+
+  <view wx:elif="{{memoirs.length === 0}}" class="empty">
+    <text>还没有回忆录。先创建一本，再开始采访。</text>
+  </view>
+
+  <view class="list" wx:else>
+    <view
+      class="card"
+      wx:for="{{memoirs}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      data-title="{{item.title}}"
+      bindtap="onOpenMemoir"
+    >
+      <text class="card-title">{{item.title}}</text>
+      <text class="card-meta">主人：{{item.subject_name}}</text>
+      <view class="card-actions">
+        <button
+          class="btn-secondary"
+          size="mini"
+          catchtap="onStartInterview"
+          data-id="{{item.id}}"
+        >开始采访</button>
+      </view>
+    </view>
+  </view>
+</view>

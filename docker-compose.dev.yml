@@ -1,0 +1,67 @@
+name: memoir-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: memoir-postgres
+    hostname: memoir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MEMOIR_PG_USER:-memoir}
+      POSTGRES_PASSWORD: ${MEMOIR_PG_PASSWORD:-memoir}
+      POSTGRES_DB: ${MEMOIR_PG_DB:-memoir}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MEMOIR_PG_PORT:-5433}:5432"
+    volumes:
+      - memoir-dev-pg-data:/var/lib/postgresql/data
+    networks:
+      - memoir-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  memoir-api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: memoir-api:dev
+    container_name: memoir-api-dev
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${MEMOIR_PG_USER:-memoir}:${MEMOIR_PG_PASSWORD:-memoir}@postgres:5432/${MEMOIR_PG_DB:-memoir}
+      LISTEN_ADDR: 0.0.0.0:8080
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-jwt-secret}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${MEMOIR_API_PORT:-18081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - memoir-dev-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  memoir-dev-pg-data:
+    name: memoir-dev-pg-data
+
+networks:
+  memoir-dev-network:
+    name: memoir-dev-network
+    driver: bridge

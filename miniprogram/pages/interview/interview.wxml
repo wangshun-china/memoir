@@ -1,0 +1,44 @@
+<navigation-bar title="文字采访" back="{{true}}" color="black" background="#F7F3EA"></navigation-bar>
+
+<view class="page">
+  <view class="topic-bar">
+    <text class="topic-main">正在整理：{{topic}}</text>
+    <text class="topic-sub">本次采访：{{topicHint}}</text>
+  </view>
+
+  <scroll-view scroll-y class="messages" scroll-into-view="{{scrollInto}}">
+    <view
+      wx:for="{{messages}}"
+      wx:key="id"
+      id="m-{{item.id}}"
+      class="bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}"
+    >
+      <text class="bubble-role">{{item.role === 'user' ? '我' : '采访者'}}</text>
+      <text class="bubble-text">{{item.content}}</text>
+    </view>
+  </scroll-view>
+
+  <view class="composer">
+    <text class="hint">可用系统语音输入法说话转文字</text>
+    <textarea
+      class="input"
+      placeholder="慢慢说，想到什么写什么…"
+      value="{{draft}}"
+      maxlength="2000"
+      disabled="{{finished || sending}}"
+      bindinput="onDraft"
+      auto-height
+    />
+    <button class="btn-send" loading="{{sending}}" disabled="{{finished}}" bindtap="onSend">发送</button>
+
+    <view class="actions">
+      <button class="action" size="mini" disabled="{{finished || sending}}" data-action="dont_know" bindtap="onAction">不知道怎么回答</button>
+      <button class="action" size="mini" disabled="{{finished || sending}}" data-action="change_question" bindtap="onAction">换一个问题</button>
+      <button class="action" size="mini" disabled="{{finished || sending}}" data-action="prefer_not" bindtap="onAction">这个问题不想说</button>
+      <button class="action action-end" size="mini" disabled="{{finished || sending}}" data-action="end" bindtap="onAction">结束本次采访</button>
+    </view>
+
+    <view wx:if="{{error}}" class="error">{{error}}</view>
+    <view wx:if="{{finished}}" class="done">本次采访已结束，记录已保存。</view>
+  </view>
+</view>

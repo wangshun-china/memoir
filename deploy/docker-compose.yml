@@ -1,0 +1,59 @@
+name: memoir
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: memoir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MEMOIR_PG_USER:-memoir}
+      POSTGRES_PASSWORD: ${MEMOIR_PG_PASSWORD:?set MEMOIR_PG_PASSWORD}
+      POSTGRES_DB: ${MEMOIR_PG_DB:-memoir}
+      TZ: Asia/Shanghai
+    volumes:
+      - memoir-pg-data:/var/lib/postgresql/data
+    networks:
+      - memoir-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  memoir-api:
+    image: ${MEMOIR_API_IMAGE:?set MEMOIR_API_IMAGE}
+    container_name: memoir-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${MEMOIR_PG_USER:-memoir}:${MEMOIR_PG_PASSWORD}@postgres:5432/${MEMOIR_PG_DB:-memoir}
+      LISTEN_ADDR: 0.0.0.0:8080
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${MEMOIR_API_HOST_PORT:-18080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - memoir-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+volumes:
+  memoir-pg-data:
+    name: memoir-pg-data
+
+networks:
+  memoir-net:
+    name: memoir-net
+    driver: bridge

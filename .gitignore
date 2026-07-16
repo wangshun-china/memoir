@@ -1,0 +1,30 @@
+# secrets & local env
+.env
+.env.local
+.env.development
+.env.production
+deploy/.env
+deploy/.release.env
+**/credentials*
+**/*secret*
+
+# rust
+server/target/
+
+# node / miniprogram
+node_modules/
+miniprogram_npm/
+miniprogram/config/env.ts
+project.private.config.json
+
+# ide / os
+.idea/
+.vscode/
+mcps/
+*.swp
+.DS_Store
+Thumbs.db
+
+# logs / tmp
+*.log
+scripts/_remote_inspect.sh

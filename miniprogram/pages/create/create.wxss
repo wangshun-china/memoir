@@ -1,0 +1,40 @@
+.page {
+  min-height: 100vh;
+  padding: 32rpx 36rpx 80rpx;
+  background: #f7f3ea;
+  box-sizing: border-box;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.label {
+  display: block;
+  font-size: 30rpx;
+  color: #2c2416;
+  margin-bottom: 12rpx;
+}
+
+.input {
+  background: #fffdf8;
+  border: 1rpx solid #e5d9c4;
+  border-radius: 14rpx;
+  padding: 22rpx 24rpx;
+  font-size: 34rpx;
+  color: #2c2416;
+}
+
+.btn-primary {
+  margin-top: 20rpx;
+  background: #c45c26;
+  color: #fff;
+  font-size: 34rpx;
+  border-radius: 16rpx;
+}
+
+.error {
+  margin-top: 20rpx;
+  color: #a33;
+  font-size: 28rpx;
+}
