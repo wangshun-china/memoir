@@ -50,7 +50,7 @@ pub fn fallback_reply(messages: &[ChatMessage]) -> String {
     if snippet.is_empty() {
         "先从一件小事开始：你小时候住的地方，门口是什么样的？".into()
     } else {
-        format!("谢谢你分享。关于「{}」——当时具体是在哪里发生的？", snippet)
+        format!("谢谢你分享。关于「{snippet}」——当时具体是在哪里发生的？")
     }
 }
 

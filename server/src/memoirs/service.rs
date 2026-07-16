@@ -79,7 +79,7 @@ pub async fn create_memoir_with_chapters(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("{}的回忆录", subject));
+        .unwrap_or_else(|| format!("{subject}的回忆录"));
 
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
