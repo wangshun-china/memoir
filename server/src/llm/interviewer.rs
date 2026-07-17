@@ -1,4 +1,4 @@
-use super::client::{ChatMessage, LlmClient};
+use super::client::{ChatMessage, LlmClient, LlmCompletion};
 use crate::interviews::service::InterviewMessage;
 
 const SYSTEM_PROMPT: &str = r#"你是一位温和、耐心的人生回忆录采访者。
@@ -15,14 +15,15 @@ pub async fn next_question(
     subject_name: &str,
     history: &[InterviewMessage],
     user_content: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<LlmCompletion> {
     let mut messages = Vec::new();
     messages.push(ChatMessage {
         role: "system".into(),
-        content: format!("{SYSTEM_PROMPT}\n当前采访主题：{topic}\n回忆录主人：{subject_name}"),
+        content: format!(
+            "{SYSTEM_PROMPT}\n当前采访主题：{topic}\n回忆录主人：{subject_name}"
+        ),
     });
 
-    // Send recent turns only (Stage-1: last 12).
     let start = history.len().saturating_sub(12);
     for m in &history[start..] {
         let role = match m.role.as_str() {
@@ -36,7 +37,6 @@ pub async fn next_question(
         });
     }
 
-    // Ensure the latest user turn is present even if not yet in history.
     if history
         .last()
         .map(|m| m.content.as_str() != user_content || m.role != "user")

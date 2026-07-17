@@ -1,21 +1,24 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::error::AppResult;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: Uuid,
+    /// User UUID string, or "admin" for admin console.
+    pub sub: String,
+    /// "user" | "admin"
+    pub role: String,
     pub exp: i64,
     pub iat: i64,
 }
 
-pub fn issue_token(user_id: Uuid, secret: &str, ttl_hours: i64) -> AppResult<String> {
+pub fn issue_token(subject: &str, role: &str, secret: &str, ttl_hours: i64) -> AppResult<String> {
     let now = Utc::now();
     let claims = Claims {
-        sub: user_id,
+        sub: subject.to_string(),
+        role: role.to_string(),
         iat: now.timestamp(),
         exp: (now + Duration::hours(ttl_hours)).timestamp(),
     };

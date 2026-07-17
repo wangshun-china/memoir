@@ -15,8 +15,11 @@ chmod +x scripts/*.sh deploy/deploy.sh
 服务地址：
 
 - WSL 内 API 健康检查：`http://127.0.0.1:18081/health`
+- **管理台**：`http://127.0.0.1:18081/admin/`（默认密码 `admin123`，生产用 `ADMIN_PASSWORD`）
 - Windows/小程序 API：脚本自动使用当前 WSL IP 和端口 `18081`
 - PostgreSQL：`127.0.0.1:5433`
+
+管理台能力：用户列表、回忆录列表、AI 配置（保存/热加载）、链接测试、Token 消耗统计。
 
 常用命令：
 

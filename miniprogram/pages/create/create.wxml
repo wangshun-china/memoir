@@ -1,31 +1,40 @@
-<navigation-bar title="创建回忆录" back="{{true}}" color="black" background="#F7F3EA"></navigation-bar>
+<navigation-bar title="创建回忆录" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
 
 <view class="page">
-  <view class="field">
-    <text class="label">回忆录主人姓名 *</text>
-    <input class="input" placeholder="例如：王大爷" value="{{subjectName}}" bindinput="onSubject" />
+  <view class="intro">
+    <text class="intro-title">先记下主人是谁</text>
+    <text class="intro-desc">只需最少信息即可开始。其余细节可以在采访中慢慢补充。</text>
   </view>
 
-  <view class="field">
-    <text class="label">希望系统如何称呼</text>
-    <input class="input" placeholder="例如：王大爷 / 父亲" value="{{preferredName}}" bindinput="onPreferred" />
+  <view class="form-card">
+    <view class="field">
+      <text class="label">回忆录主人姓名 <text class="req">*</text></text>
+      <input class="input" placeholder="例如：王大爷" value="{{subjectName}}" bindinput="onSubject" />
+    </view>
+
+    <view class="field">
+      <text class="label">希望系统如何称呼</text>
+      <input class="input" placeholder="例如：王大爷 / 父亲" value="{{preferredName}}" bindinput="onPreferred" />
+    </view>
+
+    <view class="field row">
+      <view class="half">
+        <text class="label">出生年份</text>
+        <input class="input" type="number" placeholder="1948" value="{{birthYear}}" bindinput="onBirthYear" />
+      </view>
+      <view class="half">
+        <text class="label">出生地</text>
+        <input class="input" placeholder="河北某县" value="{{birthPlace}}" bindinput="onBirthPlace" />
+      </view>
+    </view>
+
+    <view class="field">
+      <text class="label">您与主人的关系</text>
+      <input class="input" placeholder="儿子 / 女儿 / 本人" value="{{relation}}" bindinput="onRelation" />
+    </view>
   </view>
 
-  <view class="field">
-    <text class="label">出生年份（可选）</text>
-    <input class="input" type="number" placeholder="例如：1948" value="{{birthYear}}" bindinput="onBirthYear" />
-  </view>
-
-  <view class="field">
-    <text class="label">出生地（可选）</text>
-    <input class="input" placeholder="例如：河北某县" value="{{birthPlace}}" bindinput="onBirthPlace" />
-  </view>
-
-  <view class="field">
-    <text class="label">您与主人的关系（可选）</text>
-    <input class="input" placeholder="例如：儿子 / 女儿 / 本人" value="{{relation}}" bindinput="onRelation" />
-  </view>
-
-  <button class="btn-primary" loading="{{submitting}}" bindtap="onSubmit">创建并开始</button>
+  <button class="btn-primary submit" loading="{{submitting}}" bindtap="onSubmit">创建并开始采访</button>
   <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view class="tip">创建后会自动生成「童年与家庭」等 9 个章节模板。</view>
 </view>

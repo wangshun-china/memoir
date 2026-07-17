@@ -1,25 +1,30 @@
-<navigation-bar title="文字采访" back="{{true}}" color="black" background="#F7F3EA"></navigation-bar>
+<navigation-bar title="文字采访" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
 
 <view class="page">
   <view class="topic-bar">
-    <text class="topic-main">正在整理：{{topic}}</text>
-    <text class="topic-sub">本次采访：{{topicHint}}</text>
+    <view class="topic-chip">正在整理</view>
+    <text class="topic-main">{{topic}}</text>
+    <text class="topic-sub">本次话题 · {{topicHint}}</text>
   </view>
 
-  <scroll-view scroll-y class="messages" scroll-into-view="{{scrollInto}}">
+  <scroll-view scroll-y class="messages" scroll-into-view="{{scrollInto}}" scroll-with-animation>
     <view
       wx:for="{{messages}}"
       wx:key="id"
       id="m-{{item.id}}"
-      class="bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}"
+      class="row {{item.role === 'user' ? 'row-user' : 'row-ai'}}"
     >
-      <text class="bubble-role">{{item.role === 'user' ? '我' : '采访者'}}</text>
-      <text class="bubble-text">{{item.content}}</text>
+      <view class="avatar-sm {{item.role === 'user' ? 'me' : 'ai'}}">{{item.role === 'user' ? '我' : '采'}}</view>
+      <view class="bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">
+        <text class="bubble-text">{{item.content}}</text>
+      </view>
     </view>
   </scroll-view>
 
   <view class="composer">
-    <text class="hint">可用系统语音输入法说话转文字</text>
+    <view class="hint-row">
+      <text class="hint">💡 可用系统语音输入法说话转文字</text>
+    </view>
     <textarea
       class="input"
       placeholder="慢慢说，想到什么写什么…"
@@ -28,8 +33,9 @@
       disabled="{{finished || sending}}"
       bindinput="onDraft"
       auto-height
+      show-confirm-bar="{{false}}"
     />
-    <button class="btn-send" loading="{{sending}}" disabled="{{finished}}" bindtap="onSend">发送</button>
+    <button class="btn-primary btn-send" loading="{{sending}}" disabled="{{finished}}" bindtap="onSend">发送回答</button>
 
     <view class="actions">
       <button class="action" size="mini" disabled="{{finished || sending}}" data-action="dont_know" bindtap="onAction">不知道怎么回答</button>
@@ -39,6 +45,6 @@
     </view>
 
     <view wx:if="{{error}}" class="error">{{error}}</view>
-    <view wx:if="{{finished}}" class="done">本次采访已结束，记录已保存。</view>
+    <view wx:if="{{finished}}" class="done">✓ 本次采访已结束，记录已保存。</view>
   </view>
 </view>

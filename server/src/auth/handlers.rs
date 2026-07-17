@@ -45,7 +45,12 @@ async fn dev_login(
     let nickname = body.nickname.unwrap_or_else(|| "开发测试用户".to_string());
 
     let user = upsert_user(&state, &openid, &nickname).await?;
-    let token = issue_token(user.id, &state.config.jwt_secret, 72)?;
+    let token = issue_token(
+        &user.id.to_string(),
+        "user",
+        &state.config.jwt_secret,
+        72,
+    )?;
 
     Ok(Json(AuthResponse {
         token,
@@ -74,7 +79,12 @@ async fn wechat_login(
     };
 
     let user = upsert_user(&state, &openid, "微信用户").await?;
-    let token = issue_token(user.id, &state.config.jwt_secret, 72)?;
+    let token = issue_token(
+        &user.id.to_string(),
+        "user",
+        &state.config.jwt_secret,
+        72,
+    )?;
 
     Ok(Json(AuthResponse {
         token,

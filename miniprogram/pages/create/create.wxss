@@ -1,40 +1,90 @@
 .page {
   min-height: 100vh;
-  padding: 32rpx 36rpx 80rpx;
-  background: #f7f3ea;
+  padding: 28rpx 32rpx 80rpx;
+  background:
+    radial-gradient(ellipse 70% 30% at 100% 0%, rgba(232, 168, 120, 0.22), transparent 60%),
+    #f4efe4;
   box-sizing: border-box;
 }
 
+.intro {
+  margin-bottom: 24rpx;
+  padding: 8rpx 8rpx 0;
+}
+
+.intro-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #2a2318;
+}
+
+.intro-desc {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  color: #6f634f;
+  line-height: 1.55;
+}
+
+.form-card {
+  background: #fffdf8;
+  border: 1rpx solid #e6d9c4;
+  border-radius: 24rpx;
+  padding: 28rpx 28rpx 8rpx;
+  box-shadow: 0 8rpx 28rpx rgba(68, 42, 18, 0.06);
+}
+
 .field {
-  margin-bottom: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.field.row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.half {
+  flex: 1;
+  min-width: 0;
 }
 
 .label {
   display: block;
-  font-size: 30rpx;
-  color: #2c2416;
+  font-size: 28rpx;
+  color: #2a2318;
   margin-bottom: 12rpx;
+  font-weight: 560;
+}
+
+.req {
+  color: #c45c26;
 }
 
 .input {
-  background: #fffdf8;
-  border: 1rpx solid #e5d9c4;
-  border-radius: 14rpx;
+  background: #f7f1e7;
+  border: 1rpx solid #e6d9c4;
+  border-radius: 16rpx;
   padding: 22rpx 24rpx;
   font-size: 34rpx;
-  color: #2c2416;
+  color: #2a2318;
 }
 
-.btn-primary {
-  margin-top: 20rpx;
-  background: #c45c26;
-  color: #fff;
-  font-size: 34rpx;
-  border-radius: 16rpx;
+.submit {
+  margin-top: 28rpx;
 }
 
 .error {
-  margin-top: 20rpx;
+  margin-top: 18rpx;
   color: #a33;
   font-size: 28rpx;
+  text-align: center;
+}
+
+.tip {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #8a7b66;
+  line-height: 1.5;
 }

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::config::Config;
 
@@ -10,18 +11,59 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct LlmCompletion {
+    pub content: String,
+    pub model: String,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
+    pub total_tokens: i32,
+    pub latency_ms: i64,
+    pub used_fallback: bool,
+}
+
 #[async_trait]
 pub trait LlmClient: Send + Sync {
-    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<String>;
+    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<LlmCompletion>;
+    fn model_name(&self) -> &str;
+    fn kind(&self) -> &'static str;
 }
 
 /// Deterministic fallback used when no LLM API key is configured.
-pub struct FallbackLlmClient;
+pub struct FallbackLlmClient {
+    pub model: String,
+}
 
 #[async_trait]
 impl LlmClient for FallbackLlmClient {
-    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        Ok(fallback_reply(messages))
+    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<LlmCompletion> {
+        let started = Instant::now();
+        let content = fallback_reply(messages);
+        let prompt_tokens = estimate_tokens(
+            &messages
+                .iter()
+                .map(|m| m.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        let completion_tokens = estimate_tokens(&content);
+        Ok(LlmCompletion {
+            content,
+            model: self.model.clone(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+            latency_ms: started.elapsed().as_millis() as i64,
+            used_fallback: true,
+        })
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn kind(&self) -> &'static str {
+        "fallback"
     }
 }
 
@@ -45,13 +87,18 @@ pub fn fallback_reply(messages: &[ChatMessage]) -> String {
         return "理解，我们不谈这个。你还记得当时住的房子是什么样的吗？".into();
     }
 
-    // Default: one short concrete follow-up, referencing a snippet of the answer.
     let snippet: String = last_user.chars().take(24).collect();
     if snippet.is_empty() {
         "先从一件小事开始：你小时候住的地方，门口是什么样的？".into()
     } else {
         format!("谢谢你分享。关于「{snippet}」——当时具体是在哪里发生的？")
     }
+}
+
+pub fn estimate_tokens(text: &str) -> i32 {
+    // Rough CJK-aware estimate: ~1.5 chars per token for mixed Chinese.
+    let chars = text.chars().count().max(1) as f32;
+    (chars / 1.5).ceil() as i32
 }
 
 pub struct OpenAiCompatibleClient {
@@ -63,7 +110,8 @@ pub struct OpenAiCompatibleClient {
 
 #[async_trait]
 impl LlmClient for OpenAiCompatibleClient {
-    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
+    async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<LlmCompletion> {
+        let started = Instant::now();
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
         let body = serde_json::json!({
             "model": self.model,
@@ -86,21 +134,77 @@ impl LlmClient for OpenAiCompatibleClient {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("LLM response missing content"))?
             .to_string();
-        Ok(content)
+
+        let prompt_tokens = resp
+            .pointer("/usage/prompt_tokens")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32)
+            .unwrap_or_else(|| {
+                estimate_tokens(
+                    &messages
+                        .iter()
+                        .map(|m| m.content.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            });
+        let completion_tokens = resp
+            .pointer("/usage/completion_tokens")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32)
+            .unwrap_or_else(|| estimate_tokens(&content));
+        let total_tokens = resp
+            .pointer("/usage/total_tokens")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32)
+            .unwrap_or(prompt_tokens + completion_tokens);
+
+        Ok(LlmCompletion {
+            content,
+            model: self.model.clone(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            latency_ms: started.elapsed().as_millis() as i64,
+            used_fallback: false,
+        })
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn kind(&self) -> &'static str {
+        "openai_compatible"
     }
 }
 
-pub fn build_llm_client(config: &Config) -> Arc<dyn LlmClient> {
-    if let (Some(base), Some(key)) = (&config.llm_api_base, &config.llm_api_key) {
-        Arc::new(OpenAiCompatibleClient {
-            http: reqwest::Client::new(),
-            base: base.clone(),
-            api_key: key.clone(),
-            model: config.llm_model.clone(),
-        })
-    } else {
-        Arc::new(FallbackLlmClient)
+pub fn build_llm_client(
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    model: &str,
+) -> Arc<dyn LlmClient> {
+    match (api_base, api_key) {
+        (Some(base), Some(key)) if !base.is_empty() && !key.is_empty() => {
+            Arc::new(OpenAiCompatibleClient {
+                http: reqwest::Client::new(),
+                base: base.to_string(),
+                api_key: key.to_string(),
+                model: model.to_string(),
+            })
+        }
+        _ => Arc::new(FallbackLlmClient {
+            model: format!("{model}-fallback"),
+        }),
     }
+}
+
+pub fn build_llm_client_from_config(config: &Config) -> Arc<dyn LlmClient> {
+    build_llm_client(
+        config.llm_api_base.as_deref(),
+        config.llm_api_key.as_deref(),
+        &config.llm_model,
+    )
 }
 
 #[cfg(test)]

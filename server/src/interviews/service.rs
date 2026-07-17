@@ -233,25 +233,66 @@ pub async fn post_message(
     let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
 
     // 2) Call interviewer skill without holding a DB connection.
-    let reply = interviewer::next_question(
-        state.llm.as_ref(),
+    let client = {
+        let runtime = state.llm_runtime.read().await;
+        runtime.client.clone()
+    };
+    let completion = match interviewer::next_question(
+        client.as_ref(),
         &session.topic,
         &memoir.subject_name,
         &history,
         &llm_user_text,
     )
     .await
-    .unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "LLM failed; using safe fallback");
-        "谢谢你。能再具体一点：那件事发生在什么地方？".into()
-    });
+    {
+        Ok(c) => {
+            let _ = crate::settings::record_usage(
+                &state.pool,
+                "interview",
+                &c.model,
+                c.prompt_tokens,
+                c.completion_tokens,
+                c.total_tokens,
+                c.latency_ms,
+                true,
+                None,
+            )
+            .await;
+            c
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "LLM failed; using safe fallback");
+            let _ = crate::settings::record_usage(
+                &state.pool,
+                "interview",
+                client.model_name(),
+                0,
+                0,
+                0,
+                0,
+                false,
+                Some(&e.to_string()),
+            )
+            .await;
+            crate::llm::client::LlmCompletion {
+                content: "谢谢你。能再具体一点：那件事发生在什么地方？".into(),
+                model: client.model_name().to_string(),
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                latency_ms: 0,
+                used_fallback: true,
+            }
+        }
+    };
 
     // 3) Persist assistant turn.
     let assistant_message = insert_message(
         &state.pool,
         session_id,
         "assistant",
-        &reply,
+        &completion.content,
         Some("follow_up"),
     )
     .await?;

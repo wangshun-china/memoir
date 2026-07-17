@@ -261,3 +261,68 @@ fn default_chapter_titles_match_mvp_spec() {
         ]
     );
 }
+
+#[tokio::test]
+async fn admin_login_overview_and_ai_test() {
+    if !database_url_set() {
+        eprintln!("skip: DATABASE_URL not set");
+        return;
+    }
+    dotenvy::dotenv().ok();
+    let admin_password =
+        std::env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "admin123".to_string());
+    let (app, _) = memoir_server::app_from_env().await.expect("app");
+
+    let (status, bad) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/login",
+        None,
+        Some(json!({ "password": "wrong-password-xyz" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{bad}");
+
+    let (status, auth) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/login",
+        None,
+        Some(json!({ "password": admin_password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{auth}");
+    let token = auth["token"].as_str().expect("admin token");
+
+    let (status, overview) =
+        json_request(&app, "GET", "/api/v1/admin/overview", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert!(overview["users"].as_i64().unwrap_or(-1) >= 0);
+    assert!(overview["ai"]["mode"].as_str().is_some());
+
+    let (status, users) =
+        json_request(&app, "GET", "/api/v1/admin/users", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{users}");
+    assert!(users.as_array().is_some());
+
+    let (status, memoirs) =
+        json_request(&app, "GET", "/api/v1/admin/memoirs", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{memoirs}");
+
+    let (status, test) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/ai-config/test",
+        Some(token),
+        Some(json!({ "prompt": "你好" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{test}");
+    assert_eq!(test["ok"], true);
+    assert!(!test["reply"].as_str().unwrap_or("").is_empty());
+
+    let (status, usage) =
+        json_request(&app, "GET", "/api/v1/admin/ai-usage", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{usage}");
+    assert!(usage["summary"]["calls"].as_i64().unwrap_or(0) >= 1);
+}

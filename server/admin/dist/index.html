@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>回忆录管理台</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222d;
+      --panel-2: #232d3b;
+      --line: #2f3b4d;
+      --text: #e8eef6;
+      --muted: #93a4b8;
+      --accent: #e07a3a;
+      --accent-2: #3d9cf0;
+      --ok: #3ecf8e;
+      --bad: #f07178;
+      --shadow: 0 12px 40px rgba(0,0,0,.35);
+      --radius: 16px;
+      --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #2a1b12 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #12253a 0%, transparent 50%),
+        var(--bg);
+    }
+    .hidden { display: none !important; }
+    .login-wrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: linear-gradient(180deg, var(--panel), #151c25);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: .02em;
+      margin: 0 0 8px;
+    }
+    .sub { color: var(--muted); margin: 0 0 24px; line-height: 1.5; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    input, textarea, select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), #c45c26);
+      color: #fff;
+    }
+    button.secondary {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .err { color: var(--bad); margin-top: 12px; font-size: 14px; }
+    .ok { color: var(--ok); margin-top: 12px; font-size: 14px; }
+
+    .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .side {
+      border-right: 1px solid var(--line);
+      background: rgba(15,20,25,.85);
+      backdrop-filter: blur(8px);
+      padding: 24px 16px;
+    }
+    .side h1 { font-size: 18px; margin: 0 8px 20px; }
+    .nav button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--muted);
+      margin-bottom: 6px;
+      border: 1px solid transparent;
+    }
+    .nav button.active, .nav button:hover {
+      background: var(--panel-2);
+      color: var(--text);
+      border-color: var(--line);
+    }
+    .main { padding: 28px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .topbar h2 { margin: 0; font-size: 24px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+    .stat .k { color: var(--muted); font-size: 13px; }
+    .stat .v { font-size: 28px; font-weight: 700; margin-top: 8px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      overflow: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #243246;
+      color: #b7c9df;
+    }
+    .tag.ok { background: rgba(62,207,142,.15); color: var(--ok); }
+    .tag.bad { background: rgba(240,113,120,.15); color: var(--bad); }
+    .field { margin-bottom: 14px; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+    .muted { color: var(--muted); }
+    @media (max-width: 860px) {
+      .shell { grid-template-columns: 1fr; }
+      .side { border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav { display: flex; flex-wrap: wrap; gap: 8px; }
+      .nav button { width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loginView" class="login-wrap">
+    <div class="card">
+      <h1 class="brand">回忆录管理台</h1>
+      <p class="sub">用户 · 回忆录 · AI 配置与消耗。默认密码见环境变量 <code>ADMIN_PASSWORD</code>（本地默认 admin123）。</p>
+      <label for="password">管理员密码</label>
+      <input id="password" type="password" placeholder="输入密码" autocomplete="current-password" />
+      <div class="btn-row">
+        <button id="loginBtn" style="flex:1">登录</button>
+      </div>
+      <div id="loginErr" class="err hidden"></div>
+    </div>
+  </div>
+
+  <div id="appView" class="shell hidden">
+    <aside class="side">
+      <h1>Memoir Admin</h1>
+      <nav class="nav">
+        <button data-tab="overview" class="active">总览</button>
+        <button data-tab="users">用户</button>
+        <button data-tab="memoirs">回忆录</button>
+        <button data-tab="ai">AI 配置</button>
+        <button data-tab="usage">消耗记录</button>
+      </nav>
+      <div style="margin-top:28px;padding:0 8px">
+        <button class="ghost" id="logoutBtn" style="width:100%">退出登录</button>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <h2 id="pageTitle">总览</h2>
+        <button class="secondary" id="refreshBtn">刷新</button>
+      </div>
+      <div id="content"></div>
+    </main>
+  </div>
+
+  <script>
+    const API = '/api/v1';
+    const state = { token: localStorage.getItem('memoir_admin_token') || '', tab: 'overview' };
+
+    async function api(path, opts = {}) {
+      const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {});
+      if (state.token) headers.Authorization = 'Bearer ' + state.token;
+      const res = await fetch(API + path, Object.assign({}, opts, { headers }));
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+      if (!res.ok) {
+        const msg = (data && data.error) || res.statusText || 'request failed';
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    function showLogin(err) {
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('appView').classList.add('hidden');
+      const el = document.getElementById('loginErr');
+      if (err) { el.textContent = err; el.classList.remove('hidden'); }
+      else el.classList.add('hidden');
+    }
+
+    function showApp() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('appView').classList.remove('hidden');
+    }
+
+    function fmtTime(s) {
+      if (!s) return '-';
+      try { return new Date(s).toLocaleString(); } catch { return s; }
+    }
+
+    async function render() {
+      const titles = { overview: '总览', users: '用户', memoirs: '回忆录', ai: 'AI 配置', usage: '消耗记录' };
+      document.getElementById('pageTitle').textContent = titles[state.tab] || '';
+      document.querySelectorAll('.nav button').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === state.tab);
+      });
+      const root = document.getElementById('content');
+      root.innerHTML = '<p class="muted">加载中…</p>';
+      try {
+        if (state.tab === 'overview') await renderOverview(root);
+        if (state.tab === 'users') await renderUsers(root);
+        if (state.tab === 'memoirs') await renderMemoirs(root);
+        if (state.tab === 'ai') await renderAi(root);
+        if (state.tab === 'usage') await renderUsage(root);
+      } catch (e) {
+        if (String(e.message).toLowerCase().includes('unauthorized') || String(e.message).includes('forbidden')) {
+          state.token = '';
+          localStorage.removeItem('memoir_admin_token');
+          showLogin('登录已失效，请重新登录');
+          return;
+        }
+        root.innerHTML = `<div class="err">${e.message}</div>`;
+      }
+    }
+
+    async function renderOverview(root) {
+      const d = await api('/admin/overview');
+      root.innerHTML = `
+        <div class="grid">
+          <div class="stat"><div class="k">用户</div><div class="v">${d.users}</div></div>
+          <div class="stat"><div class="k">回忆录</div><div class="v">${d.memoirs}</div></div>
+          <div class="stat"><div class="k">采访会话</div><div class="v">${d.interview_sessions}</div></div>
+          <div class="stat"><div class="k">消息条数</div><div class="v">${d.interview_messages}</div></div>
+          <div class="stat"><div class="k">LLM 调用</div><div class="v">${d.llm_calls}</div></div>
+          <div class="stat"><div class="k">累计 Token</div><div class="v">${d.llm_tokens}</div></div>
+          <div class="stat"><div class="k">调用成功率</div><div class="v">${(d.llm_success_rate * 100).toFixed(1)}%</div></div>
+          <div class="stat"><div class="k">AI 模式</div><div class="v" style="font-size:18px">${d.ai.mode}</div></div>
+        </div>
+        <div class="panel">
+          <div class="muted">当前模型：<strong>${d.ai.model || '-'}</strong> · Base：<span class="mono">${d.ai.api_base || '(未配置，使用本地回退)'}</span></div>
+        </div>`;
+    }
+
+    async function renderUsers(root) {
+      const rows = await api('/admin/users');
+      root.innerHTML = `<div class="panel"><table>
+        <thead><tr><th>昵称</th><th>OpenID</th><th>角色</th><th>回忆录数</th><th>创建时间</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${esc(r.nickname)}</td>
+          <td class="mono">${esc(r.wechat_openid || '-')}</td>
+          <td><span class="tag">${esc(r.role)}</span></td>
+          <td>${r.memoir_count}</td>
+          <td>${fmtTime(r.created_at)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="muted">暂无用户</td></tr>'}
+        </tbody></table></div>`;
+    }
+
+    async function renderMemoirs(root) {
+      const rows = await api('/admin/memoirs');
+      root.innerHTML = `<div class="panel"><table>
+        <thead><tr><th>标题</th><th>主人</th><th>创建者</th><th>章节</th><th>消息</th><th>状态</th><th>创建时间</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${esc(r.title)}</td>
+          <td>${esc(r.subject_name)}</td>
+          <td>${esc(r.creator_nickname)}</td>
+          <td>${r.chapter_count}</td>
+          <td>${r.message_count}</td>
+          <td><span class="tag">${esc(r.status)}</span></td>
+          <td>${fmtTime(r.created_at)}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="muted">暂无回忆录</td></tr>'}
+        </tbody></table></div>`;
+    }
+
+    async function renderAi(root) {
+      const cfg = await api('/admin/ai-config');
+      root.innerHTML = `
+        <div class="panel" style="max-width:720px">
+          <div class="field">
+            <label>API Base（OpenAI 兼容，如 https://api.openai.com/v1 或本地代理）</label>
+            <input id="aiBase" value="${escAttr(cfg.api_base)}" placeholder="https://..." />
+          </div>
+          <div class="field">
+            <label>API Key（已配置：${cfg.api_key_set ? esc(cfg.api_key_masked) : '否'}。留空表示不改；填新值覆盖）</label>
+            <input id="aiKey" type="password" placeholder="${cfg.api_key_set ? '•••• 留空保持原密钥' : 'sk-...'}" />
+          </div>
+          <div class="field">
+            <label>模型名</label>
+            <input id="aiModel" value="${escAttr(cfg.model)}" placeholder="gpt-4o-mini" />
+          </div>
+          <div class="muted" style="margin-bottom:12px">当前模式：<span class="tag ${cfg.has_live_client ? 'ok' : ''}">${esc(cfg.mode)}</span>
+            ${cfg.has_live_client ? '已连接第三方/本地模型' : '使用确定性回退（适合无 Key 本地开发）'}</div>
+          <div class="btn-row">
+            <button id="saveAi">保存配置</button>
+            <button class="secondary" id="clearKey">清空 Key</button>
+            <button class="secondary" id="testAi">链接测试</button>
+          </div>
+          <div id="aiMsg" class="hidden"></div>
+          <div class="field" style="margin-top:18px">
+            <label>测试 Prompt</label>
+            <textarea id="testPrompt" rows="3">请用一句话自我介绍你是回忆录采访助手。</textarea>
+          </div>
+          <pre id="testOut" class="mono muted" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:12px;min-height:60px"></pre>
+        </div>`;
+
+      document.getElementById('saveAi').onclick = async () => {
+        const msg = document.getElementById('aiMsg');
+        try {
+          const body = {
+            api_base: document.getElementById('aiBase').value.trim(),
+            model: document.getElementById('aiModel').value.trim(),
+          };
+          const key = document.getElementById('aiKey').value.trim();
+          if (key) body.api_key = key;
+          await api('/admin/ai-config', { method: 'PUT', body: JSON.stringify(body) });
+          msg.className = 'ok'; msg.textContent = '已保存并热加载'; msg.classList.remove('hidden');
+          render();
+        } catch (e) {
+          msg.className = 'err'; msg.textContent = e.message; msg.classList.remove('hidden');
+        }
+      };
+      document.getElementById('clearKey').onclick = async () => {
+        if (!confirm('确定清空 API Key？')) return;
+        await api('/admin/ai-config', { method: 'PUT', body: JSON.stringify({ clear_api_key: true }) });
+        render();
+      };
+      document.getElementById('testAi').onclick = async () => {
+        const out = document.getElementById('testOut');
+        out.textContent = '测试中…';
+        try {
+          const r = await api('/admin/ai-config/test', {
+            method: 'POST',
+            body: JSON.stringify({ prompt: document.getElementById('testPrompt').value }),
+          });
+          out.textContent = r.ok
+            ? `OK · model=${r.model} · mode=${r.mode} · tokens=${r.total_tokens} · ${r.latency_ms}ms\n\n${r.reply}`
+            : `FAIL · ${r.error || 'unknown'}`;
+        } catch (e) {
+          out.textContent = 'Error: ' + e.message;
+        }
+      };
+    }
+
+    async function renderUsage(root) {
+      const d = await api('/admin/ai-usage?limit=100');
+      const s = d.summary;
+      root.innerHTML = `
+        <div class="grid">
+          <div class="stat"><div class="k">调用次数</div><div class="v">${s.calls}</div></div>
+          <div class="stat"><div class="k">成功次数</div><div class="v">${s.success_calls}</div></div>
+          <div class="stat"><div class="k">总 Token</div><div class="v">${s.total_tokens}</div></div>
+          <div class="stat"><div class="k">平均延迟 ms</div><div class="v">${Number(s.avg_latency_ms).toFixed(0)}</div></div>
+        </div>
+        <div class="panel"><table>
+          <thead><tr><th>时间</th><th>来源</th><th>模型</th><th>Tokens</th><th>延迟</th><th>状态</th></tr></thead>
+          <tbody>${d.recent.map(r => `<tr>
+            <td>${fmtTime(r.created_at)}</td>
+            <td>${esc(r.source)}</td>
+            <td class="mono">${esc(r.model)}</td>
+            <td>${r.total_tokens} <span class="muted">(${r.prompt_tokens}+${r.completion_tokens})</span></td>
+            <td>${r.latency_ms}ms</td>
+            <td><span class="tag ${r.success ? 'ok' : 'bad'}">${r.success ? 'ok' : 'fail'}</span>
+              ${r.error_message ? `<div class="muted mono">${esc(r.error_message)}</div>` : ''}</td>
+          </tr>`).join('') || '<tr><td colspan="6" class="muted">暂无调用记录</td></tr>'}
+        </tbody></table></div>`;
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escAttr(s) { return esc(s).replace(/`/g, '&#96;'); }
+
+    document.getElementById('loginBtn').onclick = async () => {
+      try {
+        const password = document.getElementById('password').value;
+        const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
+        state.token = r.token;
+        localStorage.setItem('memoir_admin_token', r.token);
+        showApp();
+        render();
+      } catch (e) {
+        showLogin(e.message || '登录失败');
+      }
+    };
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    });
+    document.getElementById('logoutBtn').onclick = () => {
+      state.token = '';
+      localStorage.removeItem('memoir_admin_token');
+      showLogin();
+    };
+    document.getElementById('refreshBtn').onclick = () => render();
+    document.querySelectorAll('.nav button').forEach(b => {
+      b.onclick = () => { state.tab = b.dataset.tab; render(); };
+    });
+
+    if (state.token) { showApp(); render(); }
+    else showLogin();
+  </script>
+</body>
+</html>

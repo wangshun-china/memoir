@@ -62,6 +62,8 @@ wait_for_api() {
   for i in $(seq 1 40); do
     if curl -fsS "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
       printf '[OK] memoir-api is healthy at http://127.0.0.1:%s\n' "$port"
+      printf '    admin console: http://127.0.0.1:%s/admin/\n' "$port"
+      printf '    miniprogram API: http://127.0.0.1:%s/api/v1\n' "$port"
       return
     fi
     sleep 1

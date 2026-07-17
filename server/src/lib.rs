@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod config;
 pub mod db;
@@ -5,26 +6,39 @@ pub mod error;
 pub mod interviews;
 pub mod llm;
 pub mod memoirs;
+pub mod settings;
 pub mod state;
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::routing::get;
 use axum::{Json, Router};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
+use tokio::sync::RwLock;
 
 use crate::config::Config;
-use crate::llm::client::build_llm_client;
+use crate::settings::{load_runtime, seed_settings_from_env};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     let api = Router::new()
         .merge(auth::router())
         .merge(memoirs::router())
-        .merge(interviews::router());
+        .merge(interviews::router())
+        .merge(admin::router());
+
+    let static_dir = PathBuf::from(&state.config.admin_static_dir);
+    let index = static_dir.join("index.html");
+    let admin_svc = ServeDir::new(static_dir)
+        .not_found_service(ServeFile::new(index));
 
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1", api)
+        .nest_service("/admin", admin_svc)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -44,8 +58,13 @@ pub async fn app_from_env() -> anyhow::Result<(Router, AppState)> {
     let config = Config::from_env()?;
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
-    let llm = build_llm_client(&config);
-    let state = AppState { pool, config, llm };
+    seed_settings_from_env(&pool, &config).await?;
+    let runtime = load_runtime(&pool, &config).await?;
+    let state = AppState {
+        pool,
+        config,
+        llm_runtime: Arc::new(RwLock::new(runtime)),
+    };
     let router = build_router(state.clone());
     Ok((router, state))
 }
