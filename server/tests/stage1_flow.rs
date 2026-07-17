@@ -1,8 +1,8 @@
-//! Integration tests for Stage-1 memoir + interview handlers.
-//! Requires DATABASE_URL pointing at a Postgres instance.
+//! Integration tests for Stage-1 handlers.
 //!
-//! These tests drive the same router the binary mounts (memoir_server::build_router /
-//! app_from_env), not a reimplemented mock of the unit under test.
+//! Uses database `memoir_test` by default so cargo test never pollutes the live
+//! `memoir` application database. Set TEST_DATABASE_URL to override.
+//! Requires Postgres + ALLOW_DEV_LOGIN for user-facing API tests only.
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, StatusCode};
@@ -10,17 +10,41 @@ use http_body_util::BodyExt;
 use memoir_server::memoirs::DEFAULT_CHAPTER_TITLES;
 use serde_json::{json, Value};
 use tower::ServiceExt;
+use uuid::Uuid;
 
-fn database_url_set() -> bool {
-    std::env::var("DATABASE_URL")
+fn database_configured() -> bool {
+    std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
         .ok()
         .filter(|s| !s.is_empty())
         .is_some()
 }
 
-fn enable_dev_login_for_tests() {
-    // Integration tests create users via gated /auth/dev-login (not used by miniprogram).
+/// Point app_from_env at the isolated test DB (not the live memoir DB).
+fn prepare_test_env() {
+    dotenvy::dotenv().ok();
+    let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        let base = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://memoir:memoir@127.0.0.1:5433/memoir".into());
+        // Prefer dedicated test database name.
+        if base.ends_with("/memoir") {
+            format!("{base}_test")
+        } else if base.contains("/memoir?") {
+            base.replacen("/memoir?", "/memoir_test?", 1)
+        } else {
+            "postgres://memoir:memoir@127.0.0.1:5433/memoir_test".into()
+        }
+    });
+    std::env::set_var("DATABASE_URL", url);
     std::env::set_var("ALLOW_DEV_LOGIN", "1");
+}
+
+async fn cleanup_user(pool: &sqlx::PgPool, user_id: Uuid) {
+    // Cascade removes memoirs / chapters / sessions / messages for this user.
+    let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await;
 }
 
 async fn body_json(body: Body) -> Value {
@@ -61,11 +85,11 @@ async fn json_request(
 
 #[tokio::test]
 async fn health_endpoint_ok() {
-    if !database_url_set() {
-        eprintln!("skip: DATABASE_URL not set");
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
         return;
     }
-    dotenvy::dotenv().ok();
+    prepare_test_env();
     let (app, _) = memoir_server::app_from_env().await.expect("app");
     let (status, json) = json_request(&app, "GET", "/health", None, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -75,24 +99,25 @@ async fn health_endpoint_ok() {
 
 #[tokio::test]
 async fn create_memoir_seeds_nine_default_chapters() {
-    if !database_url_set() {
-        eprintln!("skip: DATABASE_URL not set");
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
         return;
     }
-    dotenvy::dotenv().ok();
-    enable_dev_login_for_tests();
-    let (app, _) = memoir_server::app_from_env().await.expect("app");
+    prepare_test_env();
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+    let openid = format!("test-memoir-{}", Uuid::new_v4());
 
     let (status, auth) = json_request(
         &app,
         "POST",
         "/api/v1/auth/dev-login",
         None,
-        Some(json!({ "nickname": "测试创建者", "openid": format!("test-memoir-{}", uuid::Uuid::new_v4()) })),
+        Some(json!({ "nickname": "test_creator", "openid": openid })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "auth: {auth}");
     let token = auth["token"].as_str().expect("token");
+    let user_id = Uuid::parse_str(auth["user_id"].as_str().unwrap()).unwrap();
 
     let (status, memoir) = json_request(
         &app,
@@ -100,17 +125,17 @@ async fn create_memoir_seeds_nine_default_chapters() {
         "/api/v1/memoirs",
         Some(token),
         Some(json!({
-            "subject_name": "王大爷",
+            "subject_name": "TestSubjectA",
             "birth_year": 1948,
-            "birth_place": "河北",
-            "preferred_name": "王大爷",
-            "creator_relation": "儿子"
+            "birth_place": "TestCity",
+            "preferred_name": "SubjectA",
+            "creator_relation": "child"
         })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create memoir: {memoir}");
-    assert_eq!(memoir["subject_name"], "王大爷");
-    assert!(memoir["title"].as_str().unwrap().contains("王大爷"));
+    assert_eq!(memoir["subject_name"], "TestSubjectA");
+    assert!(memoir["title"].as_str().unwrap().contains("TestSubjectA"));
 
     let chapters = memoir["chapters"].as_array().expect("chapters array");
     assert_eq!(
@@ -138,35 +163,38 @@ async fn create_memoir_seeds_nine_default_chapters() {
     assert_eq!(listed_arr.len(), 9);
     assert_eq!(listed_arr[0]["title"], "童年与家庭");
     assert_eq!(listed_arr[8]["title"], "我想留下的话");
+
+    cleanup_user(&state.pool, user_id).await;
 }
 
 #[tokio::test]
 async fn interview_message_round_trip_and_finish() {
-    if !database_url_set() {
-        eprintln!("skip: DATABASE_URL not set");
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
         return;
     }
-    dotenvy::dotenv().ok();
-    enable_dev_login_for_tests();
-    let (app, _) = memoir_server::app_from_env().await.expect("app");
+    prepare_test_env();
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+    let openid = format!("test-iv-{}", Uuid::new_v4());
 
     let (status, auth) = json_request(
         &app,
         "POST",
         "/api/v1/auth/dev-login",
         None,
-        Some(json!({ "nickname": "采访测试", "openid": format!("test-iv-{}", uuid::Uuid::new_v4()) })),
+        Some(json!({ "nickname": "test_interviewer", "openid": openid })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let token = auth["token"].as_str().unwrap();
+    let user_id = Uuid::parse_str(auth["user_id"].as_str().unwrap()).unwrap();
 
     let (status, memoir) = json_request(
         &app,
         "POST",
         "/api/v1/memoirs",
         Some(token),
-        Some(json!({ "subject_name": "李奶奶" })),
+        Some(json!({ "subject_name": "TestSubjectB" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{memoir}");
@@ -185,7 +213,7 @@ async fn interview_message_round_trip_and_finish() {
     assert_eq!(session_body["session"]["status"], "active");
     assert_eq!(session_body["opening_message"]["role"], "assistant");
 
-    let user_text = "我小时候住在村口的土坯房，冬天很冷。";
+    let user_text = "I walked to school when I was a child.";
     let (status, msg_resp) = json_request(
         &app,
         "POST",
@@ -213,7 +241,6 @@ async fn interview_message_round_trip_and_finish() {
     .await;
     assert_eq!(status, StatusCode::OK, "{messages}");
     let msgs = messages.as_array().unwrap();
-    // opening assistant + user + assistant follow-up
     assert!(msgs.len() >= 3, "expected >=3 messages, got {}", msgs.len());
     let roles: Vec<&str> = msgs.iter().map(|m| m["role"].as_str().unwrap()).collect();
     assert!(roles.contains(&"user"));
@@ -234,7 +261,6 @@ async fn interview_message_round_trip_and_finish() {
     assert_eq!(status, StatusCode::OK, "{finished}");
     assert_eq!(finished["status"], "finished");
 
-    // Prior messages must remain after finish.
     let (status, messages_after) = json_request(
         &app,
         "GET",
@@ -249,6 +275,8 @@ async fn interview_message_round_trip_and_finish() {
         msgs.len(),
         "finish must not drop messages"
     );
+
+    cleanup_user(&state.pool, user_id).await;
 }
 
 #[test]
@@ -271,24 +299,24 @@ fn default_chapter_titles_match_mvp_spec() {
 
 #[tokio::test]
 async fn admin_setup_login_overview_and_ai_test() {
-    if !database_url_set() {
-        eprintln!("skip: DATABASE_URL not set");
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
         return;
     }
-    dotenvy::dotenv().ok();
+    prepare_test_env();
     let (app, state) = memoir_server::app_from_env().await.expect("app");
 
-    // Isolate: wipe admin accounts for this test (real table, no mock password).
+    // Isolate admin tests inside memoir_test only.
     sqlx::query("DELETE FROM admin_accounts")
         .execute(&state.pool)
         .await
-        .expect("clear admins");
+        .expect("clear admins in test db");
 
     let (status, st) = json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
     assert_eq!(status, StatusCode::OK, "{st}");
     assert_eq!(st["needs_setup"], true);
 
-    let username = format!("admin_{}", &uuid::Uuid::new_v4().to_string()[..8]);
+    let username = format!("admin_{}", &Uuid::new_v4().to_string()[..8]);
     let password = "RealPass9!";
 
     let (status, setup) = json_request(
@@ -299,7 +327,7 @@ async fn admin_setup_login_overview_and_ai_test() {
         Some(json!({
             "username": username,
             "password": password,
-            "display_name": "测试管理员"
+            "display_name": "test_admin"
         })),
     )
     .await;
@@ -307,7 +335,6 @@ async fn admin_setup_login_overview_and_ai_test() {
     assert_eq!(setup["username"], username);
     assert!(!setup["token"].as_str().unwrap_or("").is_empty());
 
-    // Second setup must fail.
     let (status, again) = json_request(
         &app,
         "POST",
@@ -369,7 +396,7 @@ async fn admin_setup_login_overview_and_ai_test() {
         "POST",
         "/api/v1/admin/ai-config/test",
         Some(token),
-        Some(json!({ "prompt": "你好" })),
+        Some(json!({ "prompt": "hello" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{test}");
@@ -381,7 +408,6 @@ async fn admin_setup_login_overview_and_ai_test() {
     assert_eq!(status, StatusCode::OK, "{usage}");
     assert!(usage["summary"]["calls"].as_i64().unwrap_or(0) >= 1);
 
-    // Change password with real hash verify.
     let (status, chg) = json_request(
         &app,
         "POST",
@@ -405,12 +431,9 @@ async fn admin_setup_login_overview_and_ai_test() {
     .await;
     assert_eq!(status, StatusCode::OK, "{re}");
 
-    // Forgot-password reset via recovery secret
     std::env::set_var("ADMIN_RECOVERY_SECRET", "test-recovery-secret");
-    // Rebuild app to pick up recovery secret
     let (app2, _) = memoir_server::app_from_env().await.expect("app2");
-    let (status, st3) =
-        json_request(&app2, "GET", "/api/v1/admin/setup-status", None, None).await;
+    let (status, st3) = json_request(&app2, "GET", "/api/v1/admin/setup-status", None, None).await;
     assert_eq!(status, StatusCode::OK, "{st3}");
     assert_eq!(st3["recovery_enabled"], true);
 
@@ -437,4 +460,14 @@ async fn admin_setup_login_overview_and_ai_test() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{re2}");
+
+    // Leave test DB clean of admin fixtures.
+    sqlx::query("DELETE FROM admin_accounts")
+        .execute(&state.pool)
+        .await
+        .ok();
+    sqlx::query("TRUNCATE llm_usage_logs RESTART IDENTITY")
+        .execute(&state.pool)
+        .await
+        .ok();
 }

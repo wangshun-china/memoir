@@ -15,6 +15,8 @@ services:
       - "${MEMOIR_PG_PORT:-5433}:5432"
     volumes:
       - memoir-dev-pg-data:/var/lib/postgresql/data
+      # Only applied on first volume init; existing volumes need scripts/ensure_test_db.sh
+      - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - memoir-dev-network
     healthcheck:
