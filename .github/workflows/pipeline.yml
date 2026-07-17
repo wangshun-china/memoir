@@ -103,7 +103,7 @@ jobs:
 
   deploy:
     name: Deploy production
-    if: github.event_name != 'pull_request' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     needs: build
     runs-on: [self-hosted, aliyun]
     environment: production
