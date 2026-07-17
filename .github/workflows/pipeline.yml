@@ -17,7 +17,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/memoir-api
+  GHCR_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/memoir-api
+  ACR_REGISTRY: ${{ vars.ALIYUN_ACR_REGISTRY }}
+  ACR_IMAGE_NAME: ${{ vars.MEMOIR_ACR_IMAGE_NAME || 'wangshun_build/memoir-api' }}
 
 jobs:
   test:
@@ -65,7 +67,8 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.image.outputs.value }}
+      ghcr_image: ${{ steps.image.outputs.ghcr }}
+      acr_image: ${{ steps.image.outputs.acr }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -74,17 +77,27 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Login to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ vars.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
       - id: image
-        name: Resolve immutable image tag
-        run: echo "value=${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        name: Resolve immutable image tags
+        run: |
+          echo "ghcr=${GHCR_IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "acr=${ACR_REGISTRY}/${ACR_IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: ./server
           file: ./server/Dockerfile
           push: true
           tags: |
-            ${{ steps.image.outputs.value }}
-            ${{ env.IMAGE_NAME }}:latest
+            ${{ steps.image.outputs.ghcr }}
+            ${{ env.GHCR_IMAGE_NAME }}:latest
+            ${{ steps.image.outputs.acr }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -103,7 +116,10 @@ jobs:
       WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
       WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
       GHCR_TOKEN: ${{ github.token }}
-      RELEASE_IMAGE: ${{ needs.build.outputs.image }}
+      ACR_USERNAME: ${{ vars.ALIYUN_ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      RELEASE_GHCR_IMAGE: ${{ needs.build.outputs.ghcr_image }}
+      RELEASE_ACR_IMAGE: ${{ needs.build.outputs.acr_image }}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare deployment environment
@@ -124,19 +140,34 @@ jobs:
             printf 'WECHAT_APP_ID=%s\n' "$WECHAT_APP_ID"
             printf 'WECHAT_APP_SECRET=%s\n' "$WECHAT_APP_SECRET"
           } > .deploy/runtime.env
-          printf 'MEMOIR_API_IMAGE=%s\n' "$RELEASE_IMAGE" > .deploy/release.env
       - name: Install deployment files
         run: |
           install -d -m 700 /opt/memoir/deploy
           install -m 644 deploy/docker-compose.yml /opt/memoir/deploy/docker-compose.yml
           install -m 700 deploy/deploy.sh /opt/memoir/deploy/deploy.sh
           install -m 600 .deploy/runtime.env /opt/memoir/deploy/.env.next
-          install -m 600 .deploy/release.env /opt/memoir/deploy/.release.env.next
-      - name: Pull and deploy immutable image
+      - name: Resolve and deploy immutable image
         run: |
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+
           printf '%s' "$GHCR_TOKEN" |
             docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$ACR_PASSWORD" |
+            docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+
+          if docker pull "$RELEASE_GHCR_IMAGE"; then
+            RELEASE_IMAGE="$RELEASE_GHCR_IMAGE"
+          elif docker pull "$RELEASE_ACR_IMAGE"; then
+            echo "GHCR pull failed; using Aliyun ACR fallback."
+            RELEASE_IMAGE="$RELEASE_ACR_IMAGE"
+          else
+            echo "Unable to pull the release image from GHCR or Aliyun ACR." >&2
+            exit 1
+          fi
+
+          umask 077
+          printf 'MEMOIR_API_IMAGE=%s\n' "$RELEASE_IMAGE" > /opt/memoir/deploy/.release.env.next
           cd /opt/memoir/deploy
           mv .env.next .env
           ./deploy.sh

@@ -59,9 +59,9 @@ docker compose -f docker-compose.dev.yml --env-file .env.development ps
 ```text
 git push main
   -> GitHub Actions test
-  -> build ghcr.io/<owner>/memoir-api:<commit-sha>
-  -> push image
-  -> SSH 120.26.186.0
+  -> build immutable image
+  -> push GHCR + Aliyun ACR
+  -> Self-hosted Runner prefers GHCR and falls back to ACR
   -> docker compose pull/up
   -> /health
 ```
@@ -78,8 +78,11 @@ GitHub Secrets：
 - `LLM_MODEL`
 - `WECHAT_APP_ID`
 - `WECHAT_APP_SECRET`
+- `ALIYUN_ACR_PASSWORD`
 
-首次部署前还需要将仓库变量 `PRODUCTION_DEPLOY_ENABLED` 设置为 `true`。
+ACR 使用仓库变量 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_USERNAME` 和
+`MEMOIR_ACR_IMAGE_NAME`。首次部署前还需要将仓库变量
+`PRODUCTION_DEPLOY_ENABLED` 设置为 `true`。
 变量未启用时，Actions 只测试和构建镜像，不连接生产服务器。
 
 生产数据库密码首次初始化后不能只靠修改环境变量完成轮换；轮换时还需要在

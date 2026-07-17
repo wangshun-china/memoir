@@ -13,6 +13,7 @@
 - `.env`：GitHub Actions 根据 Secrets 生成的运行时配置。
 - `.release.env`：当前不可变镜像标签。
 - 服务器不保存源码，也不编译 Rust。
+- 发布镜像同时写入 GHCR 和阿里云 ACR；部署优先使用 GHCR，拉取失败时回退 ACR。
 
 手动检查：
 

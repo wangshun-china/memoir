@@ -59,9 +59,9 @@ LLM Key、JWT Secret 或数据库密码。
 `.github/workflows/pipeline.yml`：
 
 1. PR 和 `main` push 执行格式检查、Clippy 和测试。
-2. `main` push 构建不可变 GHCR 镜像。
-3. GitHub Actions 通过 SSH 将运行时密钥写入服务器。
-4. 服务器拉取镜像并运行 Docker Compose。
+2. `main` push 构建不可变镜像并同时推送到 GHCR 和阿里云 ACR。
+3. 阿里云 Self-hosted Runner 将运行时密钥写入服务器部署目录。
+4. 服务器优先拉取 GHCR，失败时回退 ACR，然后运行 Docker Compose。
 5. 验证容器健康检查和公网 HTTPS 健康检查。
 
 生产服务器只拉取镜像，不在服务器编译源码。生产运行文件位于
