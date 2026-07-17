@@ -245,3 +245,34 @@
   margin-top: 28rpx;
   width: 70%;
 }
+
+.login-card {
+  background: #fffdf8;
+  border: 1rpx solid #e6d9c4;
+  border-radius: 24rpx;
+  padding: 40rpx 32rpx;
+  box-shadow: 0 8rpx 28rpx rgba(68, 42, 18, 0.06);
+  text-align: center;
+}
+
+.login-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 650;
+  color: #2a2318;
+}
+
+.login-desc {
+  display: block;
+  margin: 12rpx 0 28rpx;
+  font-size: 28rpx;
+  color: #6f634f;
+  line-height: 1.55;
+}
+
+.login-card .error {
+  display: block;
+  margin-top: 16rpx;
+  color: #a33;
+  font-size: 26rpx;
+}

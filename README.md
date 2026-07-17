@@ -54,6 +54,21 @@ API Key 仍来自 gitignored 的 `.env.development`。
 生成的 `miniprogram/config/env.ts` 不提交。小程序中不得放入 AppSecret、
 LLM Key、JWT Secret 或数据库密码。
 
+### 微信登录（真实，无 mock）
+
+小程序使用 `wx.login` → `POST /api/v1/auth/wechat`，后端用 `WECHAT_APP_ID` /
+`WECHAT_APP_SECRET` 调微信 `jscode2session` 换 **真实 openid**。未配置密钥时接口直接报错，不会伪造 openid。
+
+```bash
+# WSL / 服务器环境变量
+export WECHAT_APP_ID=你的小程序AppId
+export WECHAT_APP_SECRET=你的小程序AppSecret
+```
+
+底部 Tab：**首页**（回忆录列表）/ **我的**（资料、登录退出）。
+
+`POST /auth/dev-login` 仅在 `ALLOW_DEV_LOGIN=1` 时开启（CI 自动化测试），小程序不会调用。
+
 ## CI/CD
 
 `.github/workflows/pipeline.yml`：

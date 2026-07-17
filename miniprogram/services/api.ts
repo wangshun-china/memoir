@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../config/env'
 
 const TOKEN_KEY = 'memoir_token'
+const USER_KEY = 'memoir_user'
 
 export function getToken(): string {
   return wx.getStorageSync(TOKEN_KEY) || ''
@@ -12,6 +13,19 @@ export function setToken(token: string) {
 
 export function clearToken() {
   wx.removeStorageSync(TOKEN_KEY)
+  wx.removeStorageSync(USER_KEY)
+}
+
+export function getCachedUser(): AuthResponse | null {
+  try {
+    return wx.getStorageSync(USER_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+function setCachedUser(user: AuthResponse) {
+  wx.setStorageSync(USER_KEY, user)
 }
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE'
@@ -61,22 +75,103 @@ export interface AuthResponse {
   token: string
   user_id: string
   nickname: string
+  avatar_url?: string
 }
 
+export interface UserProfile {
+  id: string
+  nickname: string
+  avatar_url?: string
+  wechat_openid?: string
+  created_at: string
+}
+
+/** wx.login → backend /auth/wechat (real openid exchange; no mock). */
+export function wechatLogin(profile?: {
+  nickname?: string
+  avatar_url?: string
+}): Promise<AuthResponse> {
+  return new Promise((resolve, reject) => {
+    wx.login({
+      success: async (res) => {
+        if (!res.code) {
+          reject(new Error('微信登录失败：未获取到 code'))
+          return
+        }
+        try {
+          const auth = await request<AuthResponse>({
+            path: '/auth/wechat',
+            method: 'POST',
+            auth: false,
+            data: {
+              code: res.code,
+              nickname: profile?.nickname,
+              avatar_url: profile?.avatar_url,
+            },
+          })
+          setToken(auth.token)
+          setCachedUser(auth)
+          resolve(auth)
+        } catch (e: any) {
+          reject(e instanceof Error ? e : new Error(String(e)))
+        }
+      },
+      fail: (err) => reject(new Error(err.errMsg || 'wx.login 调用失败')),
+    })
+  })
+}
+
+export async function getMe(): Promise<UserProfile> {
+  return request<UserProfile>({ path: '/me' })
+}
+
+export async function updateProfile(data: {
+  nickname?: string
+  avatar_url?: string
+}): Promise<UserProfile> {
+  const me = await request<UserProfile>({ path: '/me', method: 'PATCH', data })
+  const cached = getCachedUser()
+  if (cached) {
+    setCachedUser({
+      ...cached,
+      nickname: me.nickname,
+      avatar_url: me.avatar_url,
+      user_id: me.id,
+    })
+  }
+  return me
+}
+
+/**
+ * Ensure a valid session: reuse token if /me works, otherwise real WeChat login.
+ * Does not invent fake openid or call /auth/dev-login.
+ */
 export async function ensureLogin(): Promise<AuthResponse> {
   const existing = getToken()
   if (existing) {
-    return { token: existing, user_id: '', nickname: '' }
+    try {
+      const me = await getMe()
+      const auth: AuthResponse = {
+        token: existing,
+        user_id: me.id,
+        nickname: me.nickname,
+        avatar_url: me.avatar_url,
+      }
+      setCachedUser(auth)
+      return auth
+    } catch {
+      clearToken()
+    }
   }
-  // Stage-1: dev mock user. Production will use wx.login + /auth/wechat.
-  const auth = await request<AuthResponse>({
-    path: '/auth/dev-login',
-    method: 'POST',
-    auth: false,
-    data: { nickname: '小程序用户', openid: 'mp-dev-user' },
-  })
-  setToken(auth.token)
-  return auth
+  return wechatLogin()
+}
+
+export function isLoggedIn(): boolean {
+  return !!getToken()
+}
+
+export function logout() {
+  clearToken()
 }
 
 export interface Memoir {

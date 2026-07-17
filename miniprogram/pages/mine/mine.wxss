@@ -1,0 +1,138 @@
+.page {
+  min-height: 100vh;
+  padding: 28rpx 32rpx 120rpx;
+  background:
+    radial-gradient(ellipse 70% 30% at 0% 0%, rgba(232, 168, 120, 0.22), transparent 60%),
+    #f4efe4;
+  box-sizing: border-box;
+}
+
+.profile-card {
+  background: linear-gradient(145deg, #fff9f1, #f7e8d8);
+  border: 1rpx solid rgba(196, 92, 38, 0.12);
+  border-radius: 28rpx;
+  padding: 40rpx 32rpx;
+  text-align: center;
+  box-shadow: 0 10rpx 32rpx rgba(68, 42, 18, 0.07);
+  margin-bottom: 28rpx;
+}
+
+.avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 36rpx;
+  background: linear-gradient(145deg, #f0c9a8, #e07a3a);
+  color: #fff;
+  font-size: 48rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20rpx;
+}
+
+.avatar.big {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 40rpx;
+  font-size: 56rpx;
+}
+
+.avatar-btn {
+  padding: 0;
+  margin: 0 auto 16rpx;
+  background: transparent;
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 40rpx;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.avatar-btn::after {
+  border: none;
+}
+
+.avatar-img {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 40rpx;
+  display: block;
+}
+
+.name {
+  display: block;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2a2318;
+}
+
+.name-input {
+  display: block;
+  margin: 0 auto 8rpx;
+  text-align: center;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2a2318;
+  width: 80%;
+}
+
+.desc {
+  display: block;
+  margin: 10rpx 0 28rpx;
+  font-size: 26rpx;
+  color: #6f634f;
+  line-height: 1.5;
+}
+
+.menu {
+  background: #fffdf8;
+  border: 1rpx solid #e6d9c4;
+  border-radius: 24rpx;
+  overflow: hidden;
+  margin-bottom: 28rpx;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 28rpx 28rpx;
+  border-bottom: 1rpx solid #efe6d8;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-label {
+  font-size: 30rpx;
+  color: #2a2318;
+}
+
+.menu-extra {
+  font-size: 28rpx;
+  color: #8a7b66;
+}
+
+.btn-logout {
+  background: #efe4d4;
+  color: #6b3a1a;
+  font-size: 30rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid #e0d2bc;
+}
+
+.btn-logout::after {
+  border: none;
+}
+
+.error {
+  color: #a33;
+  font-size: 26rpx;
+  margin-top: 16rpx;
+}
+
+.error.center {
+  text-align: center;
+}

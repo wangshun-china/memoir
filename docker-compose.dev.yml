@@ -41,6 +41,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       WECHAT_APP_ID: ${WECHAT_APP_ID:-}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      ALLOW_DEV_LOGIN: ${ALLOW_DEV_LOGIN:-0}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "${MEMOIR_API_PORT:-18081}:8080"

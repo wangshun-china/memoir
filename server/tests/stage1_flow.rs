@@ -18,6 +18,11 @@ fn database_url_set() -> bool {
         .is_some()
 }
 
+fn enable_dev_login_for_tests() {
+    // Integration tests create users via gated /auth/dev-login (not used by miniprogram).
+    std::env::set_var("ALLOW_DEV_LOGIN", "1");
+}
+
 async fn body_json(body: Body) -> Value {
     let bytes: Bytes = body.collect().await.expect("body").to_bytes();
     serde_json::from_slice(&bytes).expect("json body")
@@ -75,6 +80,7 @@ async fn create_memoir_seeds_nine_default_chapters() {
         return;
     }
     dotenvy::dotenv().ok();
+    enable_dev_login_for_tests();
     let (app, _) = memoir_server::app_from_env().await.expect("app");
 
     let (status, auth) = json_request(
@@ -141,6 +147,7 @@ async fn interview_message_round_trip_and_finish() {
         return;
     }
     dotenvy::dotenv().ok();
+    enable_dev_login_for_tests();
     let (app, _) = memoir_server::app_from_env().await.expect("app");
 
     let (status, auth) = json_request(

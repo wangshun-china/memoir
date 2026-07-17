@@ -1,0 +1,44 @@
+<navigation-bar title="我的" back="{{false}}" color="black" background="#F4EFE4"></navigation-bar>
+
+<view class="page">
+  <!-- 未登录 -->
+  <view wx:if="{{!loggedIn}}" class="profile-card">
+    <view class="avatar big">微</view>
+    <text class="name">未登录</text>
+    <text class="desc">登录后可创建回忆录、同步采访记录</text>
+    <button class="btn-primary" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
+    <view wx:if="{{error}}" class="error">{{error}}</view>
+  </view>
+
+  <!-- 已登录 -->
+  <block wx:else>
+    <view class="profile-card">
+      <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+        <image wx:if="{{avatarUrl}}" class="avatar-img" src="{{avatarUrl}}" mode="aspectFill" />
+        <view wx:else class="avatar big">{{nickInitial}}</view>
+      </button>
+      <input
+        class="name-input"
+        type="nickname"
+        placeholder="点击填写昵称"
+        value="{{nickname}}"
+        bindblur="onNicknameBlur"
+      />
+      <text class="desc">微信登录用户 · 数据仅本人可见</text>
+    </view>
+
+    <view class="menu">
+      <view class="menu-item" bindtap="goHome">
+        <text class="menu-label">我的回忆录</text>
+        <text class="menu-extra">{{memoirCount}} 本 ›</text>
+      </view>
+      <view class="menu-item" bindtap="onRefreshProfile">
+        <text class="menu-label">刷新资料</text>
+        <text class="menu-extra">›</text>
+      </view>
+    </view>
+
+    <button class="btn-logout" bindtap="onLogout">退出登录</button>
+    <view wx:if="{{error}}" class="error center">{{error}}</view>
+  </block>
+</view>

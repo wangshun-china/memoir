@@ -1,14 +1,34 @@
 {
   "pages": [
     "pages/home/home",
+    "pages/mine/mine",
     "pages/create/create",
-    "pages/interview/interview",
-    "pages/index/index",
-    "pages/logs/logs"
+    "pages/interview/interview"
   ],
   "window": {
     "navigationBarTextStyle": "black",
-    "navigationStyle": "custom"
+    "navigationStyle": "custom",
+    "backgroundColor": "#F4EFE4"
+  },
+  "tabBar": {
+    "color": "#6f634f",
+    "selectedColor": "#c45c26",
+    "backgroundColor": "#fffdf8",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "assets/tab/home.png",
+        "selectedIconPath": "assets/tab/home-active.png"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的",
+        "iconPath": "assets/tab/mine.png",
+        "selectedIconPath": "assets/tab/mine-active.png"
+      }
+    ]
   },
   "style": "v2",
   "renderer": "skyline",

@@ -1,11 +1,11 @@
-<navigation-bar title="我的回忆录" back="{{false}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="回忆录" back="{{false}}" color="black" background="#F4EFE4"></navigation-bar>
 
 <view class="page">
   <view class="hero-card">
     <view class="hero-badge">人生故事 · 慢慢说</view>
     <text class="hero-title">把零散回忆，收成一本家书</text>
     <text class="hero-sub">温和文字采访 · 自动整理章节 · 留给家人珍藏</text>
-    <view class="hero-stats">
+    <view class="hero-stats" wx:if="{{loggedIn}}">
       <view class="stat-pill">
         <text class="stat-num">{{memoirs.length}}</text>
         <text class="stat-label">本回忆录</text>
@@ -16,55 +16,64 @@
     </view>
   </view>
 
-  <view class="toolbar">
-    <button class="btn-primary" bindtap="onCreate">＋ 创建一本回忆录</button>
+  <!-- 未登录：真实微信登录，无 mock -->
+  <view wx:if="{{!loggedIn}}" class="login-card">
+    <text class="login-title">登录后开始整理回忆</text>
+    <text class="login-desc">使用微信账号登录，数据仅保存在您的账号下。</text>
+    <button class="btn-primary" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
+    <view wx:if="{{error}}" class="error">{{error}}</view>
   </view>
 
-  <view wx:if="{{loading}}" class="state-box">
-    <view class="spinner"></view>
-    <text class="muted">正在加载您的回忆录…</text>
-  </view>
-  <view wx:elif="{{error}}" class="state-box error-box">
-    <text class="error">{{error}}</text>
-    <button class="btn-secondary" size="mini" bindtap="load">重试</button>
-  </view>
+  <block wx:else>
+    <view class="toolbar">
+      <button class="btn-primary" bindtap="onCreate">＋ 创建一本回忆录</button>
+    </view>
 
-  <view wx:elif="{{memoirs.length === 0}}" class="empty-card">
-    <view class="empty-icon">📖</view>
-    <text class="empty-title">还没有回忆录</text>
-    <text class="empty-desc">创建后会自动准备 9 个章节模板，采访者会陪您一问一答地讲故事。</text>
-    <button class="btn-primary empty-btn" bindtap="onCreate">现在创建</button>
-  </view>
+    <view wx:if="{{loading}}" class="state-box">
+      <view class="spinner"></view>
+      <text class="muted">正在加载您的回忆录…</text>
+    </view>
+    <view wx:elif="{{error}}" class="state-box error-box">
+      <text class="error">{{error}}</text>
+      <button class="btn-secondary" size="mini" bindtap="load">重试</button>
+    </view>
 
-  <view class="list" wx:else>
-    <view class="section-title">我的回忆录</view>
-    <view
-      class="card"
-      wx:for="{{memoirs}}"
-      wx:key="id"
-      data-id="{{item.id}}"
-      bindtap="onOpenMemoir"
-    >
-      <view class="card-top">
-        <view class="avatar">{{item.subject_name[0] || '忆'}}</view>
-        <view class="card-head">
-          <text class="card-title">{{item.title}}</text>
-          <text class="card-meta">主人 · {{item.subject_name}}</text>
+    <view wx:elif="{{memoirs.length === 0}}" class="empty-card">
+      <view class="empty-icon">📖</view>
+      <text class="empty-title">还没有回忆录</text>
+      <text class="empty-desc">创建后会自动准备 9 个章节模板，采访者会陪您一问一答地讲故事。</text>
+      <button class="btn-primary empty-btn" bindtap="onCreate">现在创建</button>
+    </view>
+
+    <view class="list" wx:else>
+      <view class="section-title">我的回忆录</view>
+      <view
+        class="card"
+        wx:for="{{memoirs}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onOpenMemoir"
+      >
+        <view class="card-top">
+          <view class="avatar">{{item.subject_name[0] || '忆'}}</view>
+          <view class="card-head">
+            <text class="card-title">{{item.title}}</text>
+            <text class="card-meta">主人 · {{item.subject_name}}</text>
+          </view>
+          <text class="chevron">›</text>
         </view>
-        <text class="chevron">›</text>
-      </view>
-      <view class="card-tags">
-        <text class="tag">童年与家庭</text>
-        <text class="tag soft">可继续采访</text>
-      </view>
-      <view class="card-actions">
-        <button
-          class="btn-secondary start-btn"
-          size="mini"
-          catchtap="onStartInterview"
-          data-id="{{item.id}}"
-        >开始 / 继续采访</button>
+        <view class="card-tags">
+          <text class="tag">可继续采访</text>
+        </view>
+        <view class="card-actions">
+          <button
+            class="btn-secondary start-btn"
+            size="mini"
+            catchtap="onStartInterview"
+            data-id="{{item.id}}"
+          >开始 / 继续采访</button>
+        </view>
       </view>
     </view>
-  </view>
+  </block>
 </view>

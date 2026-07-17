@@ -1,12 +1,10 @@
-// app.ts
-import { ensureLogin } from './services/api'
+// app.ts — no mock login; pages call ensureLogin / wechatLogin when needed.
 
 App<IAppOption>({
-  globalData: {},
+  globalData: {
+    userInfo: null as WechatMiniprogram.UserInfo | null,
+  },
   onLaunch() {
-    // Stage-1: establish a mock session when possible; failures are non-fatal until pages load.
-    ensureLogin().catch((err) => {
-      console.warn('dev login deferred', err)
-    })
+    // Session restore happens per-page via ensureLogin (validates token with /me).
   },
 })
