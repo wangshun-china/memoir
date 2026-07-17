@@ -2,10 +2,16 @@ name: CI and deploy
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      target_env:
+        description: Deployment target
+        required: true
+        default: aliyun
+        type: choice
+        options:
+          - aliyun
+          - wsl
 
 permissions:
   contents: read
@@ -102,10 +108,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy production
+    name: Deploy to ${{ github.event.inputs.target_env }}
     if: github.event_name == 'workflow_dispatch' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     needs: build
-    runs-on: [self-hosted, aliyun]
+    runs-on: [self-hosted, "${{ github.event.inputs.target_env }}"]
     environment: production
     env:
       MEMOIR_PG_PASSWORD: ${{ secrets.MEMOIR_PG_PASSWORD }}

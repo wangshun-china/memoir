@@ -57,11 +57,12 @@ docker compose -f docker-compose.dev.yml --env-file .env.development ps
 ## 发布
 
 ```text
-git push main
+open a pull request
+  -> GitHub Actions test
+manual workflow_dispatch (aliyun or wsl)
   -> GitHub Actions test
   -> build immutable image
   -> push GHCR + Aliyun ACR
-manual workflow_dispatch
   -> Self-hosted Runner prefers GHCR and falls back to ACR
   -> docker compose pull/up
   -> /health
@@ -83,8 +84,8 @@ GitHub Secrets：
 
 ACR 使用仓库变量 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_USERNAME` 和
 `MEMOIR_ACR_IMAGE_NAME`。首次部署前还需要将仓库变量
-`PRODUCTION_DEPLOY_ENABLED` 设置为 `true`。即使变量已启用，push 也只测试、构建并
-推送镜像；生产部署必须手动运行 workflow。变量未启用时，手动运行也不会连接生产服务器。
+`PRODUCTION_DEPLOY_ENABLED` 设置为 `true`。push 不触发此 workflow；生产构建和部署
+必须手动运行。变量未启用时，手动运行只测试和构建镜像，不连接目标服务器。
 
 生产数据库密码首次初始化后不能只靠修改环境变量完成轮换；轮换时还需要在
 PostgreSQL 中执行对应的密码修改。
