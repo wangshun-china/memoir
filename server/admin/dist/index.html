@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
   <title>回忆录管理台</title>
   <style>
     :root {
@@ -174,11 +176,13 @@
 <body>
   <div id="loginView" class="login-wrap">
     <div class="card">
-      <h1 class="brand">回忆录管理台</h1>
-      <p class="sub" id="authSub">加载中…</p>
+      <h1 class="brand" id="authBrand">回忆录管理台</h1>
+      <p class="sub" id="authSub">正在检查是否已有管理员账号…</p>
+      <div id="setupBanner" class="hidden" style="background:rgba(224,122,58,.15);border:1px solid rgba(224,122,58,.4);border-radius:12px;padding:12px 14px;margin-bottom:16px;color:#f0c9a8;font-size:14px;line-height:1.5">
+        数据库中还没有管理员。请先<strong>注册</strong>第一个管理员账号（仅此一次）。
+      </div>
 
       <div id="setupForm" class="hidden">
-        <p class="sub" style="margin-bottom:16px">首次使用：请创建管理员账号。账号保存在数据库中，无默认密码。</p>
         <label for="setupUsername">用户名</label>
         <input id="setupUsername" autocomplete="username" placeholder="字母数字，至少 3 位" style="margin-bottom:12px" />
         <label for="setupDisplay">显示名称（可选）</label>
@@ -188,7 +192,7 @@
         <label for="setupPassword2">确认密码</label>
         <input id="setupPassword2" type="password" autocomplete="new-password" />
         <div class="btn-row">
-          <button id="setupBtn" style="flex:1">创建并进入</button>
+          <button id="setupBtn" type="button" style="flex:1">注册管理员账号</button>
         </div>
       </div>
 
@@ -198,8 +202,11 @@
         <label for="password">密码</label>
         <input id="password" type="password" placeholder="密码" autocomplete="current-password" />
         <div class="btn-row">
-          <button id="loginBtn" style="flex:1">登录</button>
+          <button id="loginBtn" type="button" style="flex:1">登录</button>
         </div>
+        <p class="muted" style="font-size:12px;margin-top:14px;line-height:1.5">
+          已有管理员时只能登录，不能再次注册。忘记密码需由运维重置数据库 <code>admin_accounts</code> 表。
+        </p>
       </div>
 
       <div id="loginErr" class="err hidden"></div>
@@ -259,28 +266,43 @@
       else el.classList.add('hidden');
     }
 
+    function applyAuthMode(needsSetup) {
+      const setup = document.getElementById('setupForm');
+      const login = document.getElementById('loginForm');
+      const banner = document.getElementById('setupBanner');
+      const brand = document.getElementById('authBrand');
+      const sub = document.getElementById('authSub');
+      if (needsSetup) {
+        brand.textContent = '注册管理员';
+        sub.textContent = '系统检测到数据库中尚无管理员，请先完成注册';
+        banner.classList.remove('hidden');
+        setup.classList.remove('hidden');
+        login.classList.add('hidden');
+      } else {
+        brand.textContent = '管理员登录';
+        sub.textContent = '请使用已注册的管理员账号登录';
+        banner.classList.add('hidden');
+        setup.classList.add('hidden');
+        login.classList.remove('hidden');
+      }
+    }
+
     async function showAuthGate(err) {
       document.getElementById('loginView').classList.remove('hidden');
       document.getElementById('appView').classList.add('hidden');
       setAuthError(err);
-      let status;
+      document.getElementById('authSub').textContent = '正在检查是否已有管理员账号…';
       try {
-        status = await api('/admin/setup-status');
+        const status = await api('/admin/setup-status');
+        // Real DB check: needs_setup === true only when admin_accounts is empty
+        applyAuthMode(!!status.needs_setup);
       } catch (e) {
-        document.getElementById('authSub').textContent = '无法连接后端';
-        setAuthError(e.message);
-        return;
-      }
-      const setup = document.getElementById('setupForm');
-      const login = document.getElementById('loginForm');
-      if (status.needs_setup) {
-        document.getElementById('authSub').textContent = '首次启动 · 创建管理员账号';
-        setup.classList.remove('hidden');
-        login.classList.add('hidden');
-      } else {
-        document.getElementById('authSub').textContent = '使用数据库中的管理员账号登录 · 数据均为真实业务数据';
-        setup.classList.add('hidden');
-        login.classList.remove('hidden');
+        document.getElementById('authBrand').textContent = '回忆录管理台';
+        document.getElementById('authSub').textContent = '无法读取管理员状态，请确认 API 已启动且为最新版本';
+        document.getElementById('setupBanner').classList.add('hidden');
+        document.getElementById('setupForm').classList.add('hidden');
+        document.getElementById('loginForm').classList.add('hidden');
+        setAuthError((e && e.message) || '检查失败');
       }
     }
 

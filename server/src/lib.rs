@@ -12,10 +12,13 @@ pub mod state;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::http::{header, HeaderValue};
 use axum::routing::get;
 use axum::{Json, Router};
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use tokio::sync::RwLock;
 
@@ -32,8 +35,13 @@ pub fn build_router(state: AppState) -> Router {
 
     let static_dir = PathBuf::from(&state.config.admin_static_dir);
     let index = static_dir.join("index.html");
-    let admin_svc = ServeDir::new(static_dir)
-        .not_found_service(ServeFile::new(index));
+    // Admin SPA must not be cached — otherwise browsers keep the old login-only page.
+    let admin_svc = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
+        ))
+        .service(ServeDir::new(static_dir).not_found_service(ServeFile::new(index)));
 
     Router::new()
         .route("/health", get(health))
