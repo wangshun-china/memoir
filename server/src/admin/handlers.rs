@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
 
+use super::password::{hash_password, validate_password, validate_username, verify_password};
 use crate::auth::{issue_token, AdminAuth};
 use crate::error::{AppError, AppResult};
 use crate::llm::client::ChatMessage;
@@ -14,7 +15,11 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/admin/setup-status", get(setup_status))
+        .route("/admin/setup", post(admin_setup))
         .route("/admin/login", post(admin_login))
+        .route("/admin/change-password", post(change_password))
+        .route("/admin/me", get(admin_me))
         .route("/admin/overview", get(overview))
         .route("/admin/users", get(list_users))
         .route("/admin/memoirs", get(list_memoirs))
@@ -23,28 +28,223 @@ pub fn router() -> Router<AppState> {
         .route("/admin/ai-usage", get(ai_usage))
 }
 
+#[derive(Debug, Serialize)]
+struct SetupStatus {
+    /// true when no admin account exists yet — UI must force create-admin flow.
+    needs_setup: bool,
+    admin_count: i64,
+}
+
+async fn setup_status(State(state): State<AppState>) -> AppResult<Json<SetupStatus>> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM admin_accounts")
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(Json(SetupStatus {
+        needs_setup: count == 0,
+        admin_count: count,
+    }))
+}
+
 #[derive(Debug, Deserialize)]
-pub struct AdminLoginRequest {
+pub struct AdminSetupRequest {
+    pub username: String,
     pub password: String,
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AdminLoginResponse {
     pub token: String,
     pub role: String,
+    pub admin_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct AdminRow {
+    id: Uuid,
+    username: String,
+    password_hash: String,
+    display_name: String,
+}
+
+/// Create the first admin account. Fails if any admin already exists.
+async fn admin_setup(
+    State(state): State<AppState>,
+    Json(body): Json<AdminSetupRequest>,
+) -> AppResult<Json<AdminLoginResponse>> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM admin_accounts")
+        .fetch_one(&state.pool)
+        .await?;
+    if count > 0 {
+        return Err(AppError::Conflict(
+            "管理员已创建，请使用账号密码登录".into(),
+        ));
+    }
+
+    validate_username(&body.username)?;
+    validate_password(&body.password)?;
+    let username = body.username.trim().to_string();
+    let display_name = body
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(username.as_str())
+        .to_string();
+    let password_hash = hash_password(&body.password)?;
+
+    let row = sqlx::query_as::<_, AdminRow>(
+        r#"
+        INSERT INTO admin_accounts (username, password_hash, display_name)
+        VALUES ($1, $2, $3)
+        RETURNING id, username, password_hash, display_name
+        "#,
+    )
+    .bind(&username)
+    .bind(&password_hash)
+    .bind(&display_name)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let token = issue_token(&row.id.to_string(), "admin", &state.config.jwt_secret, 12)?;
+    Ok(Json(AdminLoginResponse {
+        token,
+        role: "admin".into(),
+        admin_id: row.id,
+        username: row.username,
+        display_name: row.display_name,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminLoginRequest {
+    pub username: String,
+    pub password: String,
 }
 
 async fn admin_login(
     State(state): State<AppState>,
     Json(body): Json<AdminLoginRequest>,
 ) -> AppResult<Json<AdminLoginResponse>> {
-    if body.password.is_empty() || body.password != state.config.admin_password {
+    let username = body.username.trim();
+    if username.is_empty() || body.password.is_empty() {
         return Err(AppError::Unauthorized);
     }
-    let token = issue_token("admin", "admin", &state.config.jwt_secret, 12)?;
+
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM admin_accounts")
+        .fetch_one(&state.pool)
+        .await?;
+    if count == 0 {
+        return Err(AppError::BadRequest(
+            "尚未创建管理员，请先完成初始化".into(),
+        ));
+    }
+
+    let row = sqlx::query_as::<_, AdminRow>(
+        r#"
+        SELECT id, username, password_hash, display_name
+        FROM admin_accounts
+        WHERE username = $1
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    if !verify_password(&body.password, &row.password_hash)? {
+        return Err(AppError::Unauthorized);
+    }
+
+    sqlx::query("UPDATE admin_accounts SET last_login_at = NOW() WHERE id = $1")
+        .bind(row.id)
+        .execute(&state.pool)
+        .await?;
+
+    let token = issue_token(&row.id.to_string(), "admin", &state.config.jwt_secret, 12)?;
     Ok(Json(AdminLoginResponse {
         token,
         role: "admin".into(),
+        admin_id: row.id,
+        username: row.username,
+        display_name: row.display_name,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+async fn change_password(
+    State(state): State<AppState>,
+    admin: AdminAuth,
+    Json(body): Json<ChangePasswordRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let admin_id = Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized)?;
+    validate_password(&body.new_password)?;
+
+    let row = sqlx::query_as::<_, AdminRow>(
+        r#"
+        SELECT id, username, password_hash, display_name
+        FROM admin_accounts WHERE id = $1
+        "#,
+    )
+    .bind(admin_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    if !verify_password(&body.current_password, &row.password_hash)? {
+        return Err(AppError::Unauthorized);
+    }
+
+    let new_hash = hash_password(&body.new_password)?;
+    sqlx::query(
+        r#"
+        UPDATE admin_accounts
+        SET password_hash = $1, updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(&new_hash)
+    .bind(admin_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Serialize)]
+struct AdminMe {
+    admin_id: Uuid,
+    username: String,
+    display_name: String,
+}
+
+async fn admin_me(
+    State(state): State<AppState>,
+    admin: AdminAuth,
+) -> AppResult<Json<AdminMe>> {
+    let admin_id = Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized)?;
+    let row = sqlx::query_as::<_, AdminRow>(
+        r#"
+        SELECT id, username, password_hash, display_name
+        FROM admin_accounts WHERE id = $1
+        "#,
+    )
+    .bind(admin_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    Ok(Json(AdminMe {
+        admin_id: row.id,
+        username: row.username,
+        display_name: row.display_name,
     }))
 }
 

@@ -5,7 +5,6 @@ pub struct Config {
     pub database_url: String,
     pub listen_addr: String,
     pub jwt_secret: String,
-    pub admin_password: String,
     pub wechat_app_id: Option<String>,
     pub wechat_app_secret: Option<String>,
     pub llm_api_base: Option<String>,
@@ -22,8 +21,6 @@ impl Config {
             listen_addr: env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
             jwt_secret: env::var("JWT_SECRET")
                 .unwrap_or_else(|_| "dev-only-change-me-jwt-secret".into()),
-            admin_password: env::var("ADMIN_PASSWORD")
-                .unwrap_or_else(|_| "admin123".into()),
             wechat_app_id: env::var("WECHAT_APP_ID").ok().filter(|s| !s.is_empty()),
             wechat_app_secret: env::var("WECHAT_APP_SECRET").ok().filter(|s| !s.is_empty()),
             llm_api_base: env::var("LLM_API_BASE").ok().filter(|s| !s.is_empty()),

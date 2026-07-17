@@ -35,7 +35,6 @@ services:
       DATABASE_URL: postgres://${MEMOIR_PG_USER:-memoir}:${MEMOIR_PG_PASSWORD:-memoir}@postgres:5432/${MEMOIR_PG_DB:-memoir}
       LISTEN_ADDR: 0.0.0.0:8080
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-jwt-secret}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       ADMIN_STATIC_DIR: /app/admin/dist
       LLM_API_BASE: ${LLM_API_BASE:-}
       LLM_API_KEY: ${LLM_API_KEY:-}

@@ -263,22 +263,69 @@ fn default_chapter_titles_match_mvp_spec() {
 }
 
 #[tokio::test]
-async fn admin_login_overview_and_ai_test() {
+async fn admin_setup_login_overview_and_ai_test() {
     if !database_url_set() {
         eprintln!("skip: DATABASE_URL not set");
         return;
     }
     dotenvy::dotenv().ok();
-    let admin_password =
-        std::env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "admin123".to_string());
-    let (app, _) = memoir_server::app_from_env().await.expect("app");
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+
+    // Isolate: wipe admin accounts for this test (real table, no mock password).
+    sqlx::query("DELETE FROM admin_accounts")
+        .execute(&state.pool)
+        .await
+        .expect("clear admins");
+
+    let (status, st) =
+        json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{st}");
+    assert_eq!(st["needs_setup"], true);
+
+    let username = format!("admin_{}", &uuid::Uuid::new_v4().to_string()[..8]);
+    let password = "RealPass9!";
+
+    let (status, setup) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/setup",
+        None,
+        Some(json!({
+            "username": username,
+            "password": password,
+            "display_name": "测试管理员"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{setup}");
+    assert_eq!(setup["username"], username);
+    assert!(!setup["token"].as_str().unwrap_or("").is_empty());
+
+    // Second setup must fail.
+    let (status, again) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/setup",
+        None,
+        Some(json!({
+            "username": "another",
+            "password": "AnotherPass9!"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{again}");
+
+    let (status, st2) =
+        json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(st2["needs_setup"], false);
 
     let (status, bad) = json_request(
         &app,
         "POST",
         "/api/v1/admin/login",
         None,
-        Some(json!({ "password": "wrong-password-xyz" })),
+        Some(json!({ "username": username, "password": "wrong-password-xyz" })),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{bad}");
@@ -288,11 +335,15 @@ async fn admin_login_overview_and_ai_test() {
         "POST",
         "/api/v1/admin/login",
         None,
-        Some(json!({ "password": admin_password })),
+        Some(json!({ "username": username, "password": password })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{auth}");
     let token = auth["token"].as_str().expect("admin token");
+
+    let (status, me) = json_request(&app, "GET", "/api/v1/admin/me", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    assert_eq!(me["username"], username);
 
     let (status, overview) =
         json_request(&app, "GET", "/api/v1/admin/overview", Some(token), None).await;
@@ -325,4 +376,28 @@ async fn admin_login_overview_and_ai_test() {
         json_request(&app, "GET", "/api/v1/admin/ai-usage", Some(token), None).await;
     assert_eq!(status, StatusCode::OK, "{usage}");
     assert!(usage["summary"]["calls"].as_i64().unwrap_or(0) >= 1);
+
+    // Change password with real hash verify.
+    let (status, chg) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/change-password",
+        Some(token),
+        Some(json!({
+            "current_password": password,
+            "new_password": "NewRealPass9!"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{chg}");
+
+    let (status, re) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/login",
+        None,
+        Some(json!({ "username": username, "password": "NewRealPass9!" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{re}");
 }

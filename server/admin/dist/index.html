@@ -175,12 +175,33 @@
   <div id="loginView" class="login-wrap">
     <div class="card">
       <h1 class="brand">回忆录管理台</h1>
-      <p class="sub">用户 · 回忆录 · AI 配置与消耗。默认密码见环境变量 <code>ADMIN_PASSWORD</code>（本地默认 admin123）。</p>
-      <label for="password">管理员密码</label>
-      <input id="password" type="password" placeholder="输入密码" autocomplete="current-password" />
-      <div class="btn-row">
-        <button id="loginBtn" style="flex:1">登录</button>
+      <p class="sub" id="authSub">加载中…</p>
+
+      <div id="setupForm" class="hidden">
+        <p class="sub" style="margin-bottom:16px">首次使用：请创建管理员账号。账号保存在数据库中，无默认密码。</p>
+        <label for="setupUsername">用户名</label>
+        <input id="setupUsername" autocomplete="username" placeholder="字母数字，至少 3 位" style="margin-bottom:12px" />
+        <label for="setupDisplay">显示名称（可选）</label>
+        <input id="setupDisplay" placeholder="例如：运维管理员" style="margin-bottom:12px" />
+        <label for="setupPassword">密码（至少 8 位）</label>
+        <input id="setupPassword" type="password" autocomplete="new-password" style="margin-bottom:12px" />
+        <label for="setupPassword2">确认密码</label>
+        <input id="setupPassword2" type="password" autocomplete="new-password" />
+        <div class="btn-row">
+          <button id="setupBtn" style="flex:1">创建并进入</button>
+        </div>
       </div>
+
+      <div id="loginForm" class="hidden">
+        <label for="username">用户名</label>
+        <input id="username" autocomplete="username" placeholder="管理员用户名" style="margin-bottom:12px" />
+        <label for="password">密码</label>
+        <input id="password" type="password" placeholder="密码" autocomplete="current-password" />
+        <div class="btn-row">
+          <button id="loginBtn" style="flex:1">登录</button>
+        </div>
+      </div>
+
       <div id="loginErr" class="err hidden"></div>
     </div>
   </div>
@@ -194,8 +215,10 @@
         <button data-tab="memoirs">回忆录</button>
         <button data-tab="ai">AI 配置</button>
         <button data-tab="usage">消耗记录</button>
+        <button data-tab="account">账号安全</button>
       </nav>
       <div style="margin-top:28px;padding:0 8px">
+        <div id="adminWho" class="muted" style="font-size:12px;margin-bottom:10px;padding:0 4px"></div>
         <button class="ghost" id="logoutBtn" style="width:100%">退出登录</button>
       </div>
     </aside>
@@ -210,7 +233,11 @@
 
   <script>
     const API = '/api/v1';
-    const state = { token: localStorage.getItem('memoir_admin_token') || '', tab: 'overview' };
+    const state = {
+      token: localStorage.getItem('memoir_admin_token') || '',
+      tab: 'overview',
+      username: localStorage.getItem('memoir_admin_username') || '',
+    };
 
     async function api(path, opts = {}) {
       const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {});
@@ -226,17 +253,52 @@
       return data;
     }
 
-    function showLogin(err) {
-      document.getElementById('loginView').classList.remove('hidden');
-      document.getElementById('appView').classList.add('hidden');
+    function setAuthError(err) {
       const el = document.getElementById('loginErr');
       if (err) { el.textContent = err; el.classList.remove('hidden'); }
       else el.classList.add('hidden');
     }
 
+    async function showAuthGate(err) {
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('appView').classList.add('hidden');
+      setAuthError(err);
+      let status;
+      try {
+        status = await api('/admin/setup-status');
+      } catch (e) {
+        document.getElementById('authSub').textContent = '无法连接后端';
+        setAuthError(e.message);
+        return;
+      }
+      const setup = document.getElementById('setupForm');
+      const login = document.getElementById('loginForm');
+      if (status.needs_setup) {
+        document.getElementById('authSub').textContent = '首次启动 · 创建管理员账号';
+        setup.classList.remove('hidden');
+        login.classList.add('hidden');
+      } else {
+        document.getElementById('authSub').textContent = '使用数据库中的管理员账号登录 · 数据均为真实业务数据';
+        setup.classList.add('hidden');
+        login.classList.remove('hidden');
+      }
+    }
+
     function showApp() {
       document.getElementById('loginView').classList.add('hidden');
       document.getElementById('appView').classList.remove('hidden');
+      document.getElementById('adminWho').textContent = state.username
+        ? ('当前：' + state.username)
+        : '';
+    }
+
+    function afterAuth(r) {
+      state.token = r.token;
+      state.username = r.username || '';
+      localStorage.setItem('memoir_admin_token', r.token);
+      localStorage.setItem('memoir_admin_username', state.username);
+      showApp();
+      render();
     }
 
     function fmtTime(s) {
@@ -245,7 +307,10 @@
     }
 
     async function render() {
-      const titles = { overview: '总览', users: '用户', memoirs: '回忆录', ai: 'AI 配置', usage: '消耗记录' };
+      const titles = {
+        overview: '总览', users: '用户', memoirs: '回忆录',
+        ai: 'AI 配置', usage: '消耗记录', account: '账号安全',
+      };
       document.getElementById('pageTitle').textContent = titles[state.tab] || '';
       document.querySelectorAll('.nav button').forEach(b => {
         b.classList.toggle('active', b.dataset.tab === state.tab);
@@ -258,15 +323,59 @@
         if (state.tab === 'memoirs') await renderMemoirs(root);
         if (state.tab === 'ai') await renderAi(root);
         if (state.tab === 'usage') await renderUsage(root);
+        if (state.tab === 'account') await renderAccount(root);
       } catch (e) {
         if (String(e.message).toLowerCase().includes('unauthorized') || String(e.message).includes('forbidden')) {
           state.token = '';
           localStorage.removeItem('memoir_admin_token');
-          showLogin('登录已失效，请重新登录');
+          localStorage.removeItem('memoir_admin_username');
+          showAuthGate('登录已失效，请重新登录');
           return;
         }
         root.innerHTML = `<div class="err">${e.message}</div>`;
       }
+    }
+
+    async function renderAccount(root) {
+      let me = { username: state.username, display_name: '' };
+      try { me = await api('/admin/me'); } catch (_) {}
+      root.innerHTML = `
+        <div class="panel" style="max-width:520px">
+          <div class="muted" style="margin-bottom:14px">账号：<strong>${esc(me.username)}</strong>
+            ${me.display_name ? ' · ' + esc(me.display_name) : ''}</div>
+          <div class="field"><label>当前密码</label>
+            <input id="curPwd" type="password" autocomplete="current-password" /></div>
+          <div class="field"><label>新密码（至少 8 位）</label>
+            <input id="newPwd" type="password" autocomplete="new-password" /></div>
+          <div class="field"><label>确认新密码</label>
+            <input id="newPwd2" type="password" autocomplete="new-password" /></div>
+          <div class="btn-row"><button id="chgPwd">修改密码</button></div>
+          <div id="pwdMsg" class="hidden"></div>
+        </div>`;
+      document.getElementById('chgPwd').onclick = async () => {
+        const msg = document.getElementById('pwdMsg');
+        const a = document.getElementById('newPwd').value;
+        const b = document.getElementById('newPwd2').value;
+        if (a !== b) {
+          msg.className = 'err'; msg.textContent = '两次新密码不一致'; msg.classList.remove('hidden');
+          return;
+        }
+        try {
+          await api('/admin/change-password', {
+            method: 'POST',
+            body: JSON.stringify({
+              current_password: document.getElementById('curPwd').value,
+              new_password: a,
+            }),
+          });
+          msg.className = 'ok'; msg.textContent = '密码已更新'; msg.classList.remove('hidden');
+          document.getElementById('curPwd').value = '';
+          document.getElementById('newPwd').value = '';
+          document.getElementById('newPwd2').value = '';
+        } catch (e) {
+          msg.className = 'err'; msg.textContent = e.message; msg.classList.remove('hidden');
+        }
+      };
     }
 
     async function renderOverview(root) {
@@ -417,31 +526,73 @@
 
     document.getElementById('loginBtn').onclick = async () => {
       try {
-        const password = document.getElementById('password').value;
-        const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
-        state.token = r.token;
-        localStorage.setItem('memoir_admin_token', r.token);
-        showApp();
-        render();
+        const r = await api('/admin/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        afterAuth(r);
       } catch (e) {
-        showLogin(e.message || '登录失败');
+        setAuthError(e.message || '登录失败');
+      }
+    };
+    document.getElementById('setupBtn').onclick = async () => {
+      const p1 = document.getElementById('setupPassword').value;
+      const p2 = document.getElementById('setupPassword2').value;
+      if (p1 !== p2) {
+        setAuthError('两次密码不一致');
+        return;
+      }
+      try {
+        const r = await api('/admin/setup', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('setupUsername').value,
+            password: p1,
+            display_name: document.getElementById('setupDisplay').value || undefined,
+          }),
+        });
+        afterAuth(r);
+      } catch (e) {
+        setAuthError(e.message || '创建失败');
       }
     };
     document.getElementById('password').addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('loginBtn').click();
     });
+    document.getElementById('setupPassword2').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('setupBtn').click();
+    });
     document.getElementById('logoutBtn').onclick = () => {
       state.token = '';
+      state.username = '';
       localStorage.removeItem('memoir_admin_token');
-      showLogin();
+      localStorage.removeItem('memoir_admin_username');
+      showAuthGate();
     };
     document.getElementById('refreshBtn').onclick = () => render();
     document.querySelectorAll('.nav button').forEach(b => {
       b.onclick = () => { state.tab = b.dataset.tab; render(); };
     });
 
-    if (state.token) { showApp(); render(); }
-    else showLogin();
+    (async () => {
+      if (state.token) {
+        try {
+          const me = await api('/admin/me');
+          state.username = me.username;
+          localStorage.setItem('memoir_admin_username', me.username);
+          showApp();
+          render();
+          return;
+        } catch (_) {
+          state.token = '';
+          localStorage.removeItem('memoir_admin_token');
+        }
+      }
+      showAuthGate();
+    })();
   </script>
 </body>
 </html>
