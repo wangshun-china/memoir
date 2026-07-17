@@ -19,9 +19,7 @@ pub async fn next_question(
     let mut messages = Vec::new();
     messages.push(ChatMessage {
         role: "system".into(),
-        content: format!(
-            "{SYSTEM_PROMPT}\n当前采访主题：{topic}\n回忆录主人：{subject_name}"
-        ),
+        content: format!("{SYSTEM_PROMPT}\n当前采访主题：{topic}\n回忆录主人：{subject_name}"),
     });
 
     let start = history.len().saturating_sub(12);

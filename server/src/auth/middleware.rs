@@ -53,19 +53,14 @@ impl FromRequestParts<AppState> for AdminAuth {
     }
 }
 
-fn extract_claims(
-    parts: &Parts,
-    state: &AppState,
-) -> Result<super::jwt::Claims, AppError> {
+fn extract_claims(parts: &Parts, state: &AppState) -> Result<super::jwt::Claims, AppError> {
     let auth = parts
         .headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::Unauthorized)?;
 
-    let token = auth
-        .strip_prefix("Bearer ")
-        .ok_or(AppError::Unauthorized)?;
+    let token = auth.strip_prefix("Bearer ").ok_or(AppError::Unauthorized)?;
 
     verify_token(token, &state.config.jwt_secret)
 }

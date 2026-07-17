@@ -15,12 +15,12 @@ use std::sync::Arc;
 use axum::http::{header, HeaderValue};
 use axum::routing::get;
 use axum::{Json, Router};
+use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
-use tokio::sync::RwLock;
 
 use crate::config::Config;
 use crate::settings::{load_runtime, seed_settings_from_env};

@@ -277,8 +277,7 @@ async fn admin_setup_login_overview_and_ai_test() {
         .await
         .expect("clear admins");
 
-    let (status, st) =
-        json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
+    let (status, st) = json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
     assert_eq!(status, StatusCode::OK, "{st}");
     assert_eq!(st["needs_setup"], true);
 
@@ -315,8 +314,7 @@ async fn admin_setup_login_overview_and_ai_test() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{again}");
 
-    let (status, st2) =
-        json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
+    let (status, st2) = json_request(&app, "GET", "/api/v1/admin/setup-status", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(st2["needs_setup"], false);
 
@@ -351,8 +349,7 @@ async fn admin_setup_login_overview_and_ai_test() {
     assert!(overview["users"].as_i64().unwrap_or(-1) >= 0);
     assert!(overview["ai"]["mode"].as_str().is_some());
 
-    let (status, users) =
-        json_request(&app, "GET", "/api/v1/admin/users", Some(token), None).await;
+    let (status, users) = json_request(&app, "GET", "/api/v1/admin/users", Some(token), None).await;
     assert_eq!(status, StatusCode::OK, "{users}");
     assert!(users.as_array().is_some());
 

@@ -225,10 +225,7 @@ struct AdminMe {
     display_name: String,
 }
 
-async fn admin_me(
-    State(state): State<AppState>,
-    admin: AdminAuth,
-) -> AppResult<Json<AdminMe>> {
+async fn admin_me(State(state): State<AppState>, admin: AdminAuth) -> AppResult<Json<AdminMe>> {
     let admin_id = Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized)?;
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
@@ -285,10 +282,7 @@ struct Overview {
     ai: crate::settings::AiConfigView,
 }
 
-async fn overview(
-    State(state): State<AppState>,
-    _admin: AdminAuth,
-) -> AppResult<Json<Overview>> {
+async fn overview(State(state): State<AppState>, _admin: AdminAuth) -> AppResult<Json<Overview>> {
     let users: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
         .fetch_one(&state.pool)
         .await?;
@@ -308,10 +302,9 @@ async fn overview(
         sqlx::query_as("SELECT COALESCE(SUM(total_tokens), 0) FROM llm_usage_logs")
             .fetch_one(&state.pool)
             .await?;
-    let llm_ok: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM llm_usage_logs WHERE success = TRUE")
-            .fetch_one(&state.pool)
-            .await?;
+    let llm_ok: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM llm_usage_logs WHERE success = TRUE")
+        .fetch_one(&state.pool)
+        .await?;
     let rate = if llm_calls.0 == 0 {
         1.0
     } else {

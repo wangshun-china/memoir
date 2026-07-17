@@ -27,11 +27,7 @@ pub struct LlmRuntime {
 }
 
 impl LlmRuntime {
-    pub fn from_parts(
-        api_base: Option<String>,
-        api_key: Option<String>,
-        model: String,
-    ) -> Self {
+    pub fn from_parts(api_base: Option<String>, api_key: Option<String>, model: String) -> Self {
         let client = build_llm_client(api_base.as_deref(), api_key.as_deref(), &model);
         Self {
             client,
@@ -171,13 +167,7 @@ pub async fn save_ai_config(
         true,
     )
     .await?;
-    upsert_setting(
-        pool,
-        "llm_api_key",
-        new_key.as_deref().unwrap_or(""),
-        true,
-    )
-    .await?;
+    upsert_setting(pool, "llm_api_key", new_key.as_deref().unwrap_or(""), true).await?;
     upsert_setting(pool, "llm_model", &new_model, true).await?;
 
     let next = LlmRuntime::from_parts(new_base, new_key, new_model);
@@ -186,6 +176,7 @@ pub async fn save_ai_config(
     Ok(view)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn record_usage(
     pool: &PgPool,
     source: &str,
