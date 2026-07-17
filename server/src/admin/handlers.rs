@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/admin/setup-status", get(setup_status))
         .route("/admin/setup", post(admin_setup))
         .route("/admin/login", post(admin_login))
+        .route("/admin/reset-password", post(reset_password))
         .route("/admin/change-password", post(change_password))
         .route("/admin/me", get(admin_me))
         .route("/admin/overview", get(overview))
@@ -33,6 +34,8 @@ struct SetupStatus {
     /// true when no admin account exists yet — UI must force create-admin flow.
     needs_setup: bool,
     admin_count: i64,
+    /// true when ADMIN_RECOVERY_SECRET is configured — forgot-password UI can show.
+    recovery_enabled: bool,
 }
 
 async fn setup_status(State(state): State<AppState>) -> AppResult<Json<SetupStatus>> {
@@ -42,6 +45,12 @@ async fn setup_status(State(state): State<AppState>) -> AppResult<Json<SetupStat
     Ok(Json(SetupStatus {
         needs_setup: count == 0,
         admin_count: count,
+        recovery_enabled: state
+            .config
+            .admin_recovery_secret
+            .as_ref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
     }))
 }
 
@@ -130,7 +139,7 @@ async fn admin_login(
 ) -> AppResult<Json<AdminLoginResponse>> {
     let username = body.username.trim();
     if username.is_empty() || body.password.is_empty() {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::Unauthorized("请输入用户名和密码".into()));
     }
 
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM admin_accounts")
@@ -142,6 +151,7 @@ async fn admin_login(
         ));
     }
 
+    // Case-sensitive exact username match against admin_accounts.username
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
         SELECT id, username, password_hash, display_name
@@ -152,10 +162,11 @@ async fn admin_login(
     .bind(username)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(AppError::Unauthorized)?;
+    .ok_or_else(|| AppError::Unauthorized("用户名或密码错误".into()))?;
 
+    // Argon2id verify: hash stored at registration, never plain text
     if !verify_password(&body.password, &row.password_hash)? {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::Unauthorized("用户名或密码错误".into()));
     }
 
     sqlx::query("UPDATE admin_accounts SET last_login_at = NOW() WHERE id = $1")
@@ -174,6 +185,71 @@ async fn admin_login(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub username: String,
+    /// Must match server env ADMIN_RECOVERY_SECRET (ops recovery key).
+    pub recovery_secret: String,
+    pub new_password: String,
+}
+
+/// Forgot-password reset: proves ops identity via ADMIN_RECOVERY_SECRET, then sets new Argon2 hash.
+async fn reset_password(
+    State(state): State<AppState>,
+    Json(body): Json<ResetPasswordRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let expected = state
+        .config
+        .admin_recovery_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "服务器未配置 ADMIN_RECOVERY_SECRET，无法在线重置。请联系运维在环境变量中设置恢复密钥。"
+                    .into(),
+            )
+        })?;
+
+    if body.recovery_secret.trim() != expected {
+        return Err(AppError::Unauthorized("恢复密钥错误".into()));
+    }
+
+    validate_username(&body.username)?;
+    validate_password(&body.new_password)?;
+    let username = body.username.trim();
+
+    let row = sqlx::query_as::<_, AdminRow>(
+        r#"
+        SELECT id, username, password_hash, display_name
+        FROM admin_accounts WHERE username = $1
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("该用户名不存在".into()))?;
+
+    let new_hash = hash_password(&body.new_password)?;
+    sqlx::query(
+        r#"
+        UPDATE admin_accounts
+        SET password_hash = $1, updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(&new_hash)
+    .bind(row.id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "username": row.username,
+        "message": "密码已重置，请使用新密码登录"
+    })))
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
@@ -184,7 +260,8 @@ async fn change_password(
     admin: AdminAuth,
     Json(body): Json<ChangePasswordRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let admin_id = Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized)?;
+    let admin_id = Uuid::parse_str(&admin.subject)
+        .map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
     validate_password(&body.new_password)?;
 
     let row = sqlx::query_as::<_, AdminRow>(
@@ -196,10 +273,10 @@ async fn change_password(
     .bind(admin_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(AppError::Unauthorized)?;
+    .ok_or_else(|| AppError::Unauthorized("登录已失效".into()))?;
 
     if !verify_password(&body.current_password, &row.password_hash)? {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::Unauthorized("当前密码不正确".into()));
     }
 
     let new_hash = hash_password(&body.new_password)?;
@@ -226,7 +303,8 @@ struct AdminMe {
 }
 
 async fn admin_me(State(state): State<AppState>, admin: AdminAuth) -> AppResult<Json<AdminMe>> {
-    let admin_id = Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized)?;
+    let admin_id = Uuid::parse_str(&admin.subject)
+        .map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
         SELECT id, username, password_hash, display_name
@@ -236,7 +314,7 @@ async fn admin_me(State(state): State<AppState>, admin: AdminAuth) -> AppResult<
     .bind(admin_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(AppError::Unauthorized)?;
+    .ok_or_else(|| AppError::Unauthorized("登录已失效".into()))?;
 
     Ok(Json(AdminMe {
         admin_id: row.id,

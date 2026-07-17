@@ -404,4 +404,37 @@ async fn admin_setup_login_overview_and_ai_test() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{re}");
+
+    // Forgot-password reset via recovery secret
+    std::env::set_var("ADMIN_RECOVERY_SECRET", "test-recovery-secret");
+    // Rebuild app to pick up recovery secret
+    let (app2, _) = memoir_server::app_from_env().await.expect("app2");
+    let (status, st3) =
+        json_request(&app2, "GET", "/api/v1/admin/setup-status", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{st3}");
+    assert_eq!(st3["recovery_enabled"], true);
+
+    let (status, reset) = json_request(
+        &app2,
+        "POST",
+        "/api/v1/admin/reset-password",
+        None,
+        Some(json!({
+            "username": username,
+            "recovery_secret": "test-recovery-secret",
+            "new_password": "ResetPass9!"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reset}");
+
+    let (status, re2) = json_request(
+        &app2,
+        "POST",
+        "/api/v1/admin/login",
+        None,
+        Some(json!({ "username": username, "password": "ResetPass9!" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{re2}");
 }

@@ -5,15 +5,15 @@ use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("unauthorized")]
-    Unauthorized,
-    #[error("forbidden")]
-    Forbidden,
-    #[error("not found: {0}")]
+    #[error("{0}")]
+    Unauthorized(String),
+    #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     NotFound(String),
-    #[error("bad request: {0}")]
+    #[error("{0}")]
     BadRequest(String),
-    #[error("conflict: {0}")]
+    #[error("{0}")]
     Conflict(String),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
@@ -26,8 +26,8 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m.clone()),
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m.clone()),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.clone()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
@@ -38,7 +38,7 @@ impl IntoResponse for AppError {
                     "database error".to_string(),
                 )
             }
-            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "invalid token".to_string()),
+            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "登录已失效，请重新登录".to_string()),
             AppError::Other(e) => {
                 tracing::error!(error = %e, "internal error");
                 (

@@ -7,6 +7,8 @@ pub struct Config {
     pub jwt_secret: String,
     /// When true, enables POST /auth/dev-login for CI/local API tests only.
     pub allow_dev_login: bool,
+    /// Ops recovery key for admin forgot-password reset (not the login password).
+    pub admin_recovery_secret: Option<String>,
     pub wechat_app_id: Option<String>,
     pub wechat_app_secret: Option<String>,
     pub llm_api_base: Option<String>,
@@ -28,6 +30,10 @@ impl Config {
             jwt_secret: env::var("JWT_SECRET")
                 .unwrap_or_else(|_| "dev-only-change-me-jwt-secret".into()),
             allow_dev_login,
+            admin_recovery_secret: env::var("ADMIN_RECOVERY_SECRET")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             wechat_app_id: env::var("WECHAT_APP_ID").ok().filter(|s| !s.is_empty()),
             wechat_app_secret: env::var("WECHAT_APP_SECRET").ok().filter(|s| !s.is_empty()),
             llm_api_base: env::var("LLM_API_BASE").ok().filter(|s| !s.is_empty()),

@@ -205,8 +205,25 @@
           <button id="loginBtn" type="button" style="flex:1">登录</button>
         </div>
         <p class="muted" style="font-size:12px;margin-top:14px;line-height:1.5">
-          已有管理员时只能登录，不能再次注册。忘记密码需由运维重置数据库 <code>admin_accounts</code> 表。
+          校验方式：用户名精确匹配 + Argon2 校验密码哈希（库表 <code>admin_accounts</code>）。
         </p>
+        <button id="showResetBtn" type="button" class="ghost" style="width:100%;margin-top:10px">忘记密码？</button>
+      </div>
+
+      <div id="resetForm" class="hidden">
+        <p class="sub" style="margin-bottom:12px">使用服务器环境变量 <code>ADMIN_RECOVERY_SECRET</code> 作为恢复密钥重置密码。</p>
+        <label for="resetUsername">用户名</label>
+        <input id="resetUsername" autocomplete="username" placeholder="管理员用户名" style="margin-bottom:12px" />
+        <label for="recoverySecret">恢复密钥</label>
+        <input id="recoverySecret" type="password" autocomplete="off" placeholder="ADMIN_RECOVERY_SECRET" style="margin-bottom:12px" />
+        <label for="resetPassword">新密码（至少 8 位）</label>
+        <input id="resetPassword" type="password" autocomplete="new-password" style="margin-bottom:12px" />
+        <label for="resetPassword2">确认新密码</label>
+        <input id="resetPassword2" type="password" autocomplete="new-password" />
+        <div class="btn-row">
+          <button id="resetBtn" type="button" style="flex:1">重置密码</button>
+          <button id="backLoginBtn" type="button" class="secondary">返回登录</button>
+        </div>
       </div>
 
       <div id="loginErr" class="err hidden"></div>
@@ -244,6 +261,8 @@
       token: localStorage.getItem('memoir_admin_token') || '',
       tab: 'overview',
       username: localStorage.getItem('memoir_admin_username') || '',
+      recoveryEnabled: false,
+      authStatus: null,
     };
 
     async function api(path, opts = {}) {
@@ -266,25 +285,63 @@
       else el.classList.add('hidden');
     }
 
-    function applyAuthMode(needsSetup) {
+    function hideAuthForms() {
+      ['setupForm', 'loginForm', 'resetForm', 'setupBanner'].forEach((id) => {
+        document.getElementById(id).classList.add('hidden');
+      });
+    }
+
+    function applyAuthMode(status) {
+      const needsSetup = !!(status && status.needs_setup);
+      const recoveryEnabled = !!(status && status.recovery_enabled);
       const setup = document.getElementById('setupForm');
       const login = document.getElementById('loginForm');
+      const reset = document.getElementById('resetForm');
       const banner = document.getElementById('setupBanner');
       const brand = document.getElementById('authBrand');
       const sub = document.getElementById('authSub');
+      const showReset = document.getElementById('showResetBtn');
+      hideAuthForms();
       if (needsSetup) {
         brand.textContent = '注册管理员';
         sub.textContent = '系统检测到数据库中尚无管理员，请先完成注册';
         banner.classList.remove('hidden');
         setup.classList.remove('hidden');
-        login.classList.add('hidden');
       } else {
         brand.textContent = '管理员登录';
         sub.textContent = '请使用已注册的管理员账号登录';
-        banner.classList.add('hidden');
-        setup.classList.add('hidden');
         login.classList.remove('hidden');
+        if (showReset) {
+          showReset.style.display = recoveryEnabled ? '' : 'none';
+          showReset.textContent = recoveryEnabled
+            ? '忘记密码？'
+            : '忘记密码（未配置恢复密钥）';
+          if (!recoveryEnabled) {
+            showReset.style.display = '';
+            showReset.onclick = () => setAuthError(
+              '服务器未配置 ADMIN_RECOVERY_SECRET。请在 .env 中设置恢复密钥后重启 API，或联系运维。'
+            );
+          }
+        }
+        reset.classList.add('hidden');
       }
+      state.recoveryEnabled = recoveryEnabled;
+      state.authStatus = status;
+    }
+
+    function showResetMode() {
+      hideAuthForms();
+      document.getElementById('authBrand').textContent = '重置密码';
+      document.getElementById('authSub').textContent = '输入用户名、恢复密钥与新密码';
+      document.getElementById('resetForm').classList.remove('hidden');
+      const u = document.getElementById('username').value;
+      if (u) document.getElementById('resetUsername').value = u;
+      setAuthError('');
+    }
+
+    function showLoginMode() {
+      applyAuthMode(state.authStatus || { needs_setup: false, recovery_enabled: state.recoveryEnabled });
+      setAuthError('');
     }
 
     async function showAuthGate(err) {
@@ -294,14 +351,11 @@
       document.getElementById('authSub').textContent = '正在检查是否已有管理员账号…';
       try {
         const status = await api('/admin/setup-status');
-        // Real DB check: needs_setup === true only when admin_accounts is empty
-        applyAuthMode(!!status.needs_setup);
+        applyAuthMode(status);
       } catch (e) {
         document.getElementById('authBrand').textContent = '回忆录管理台';
         document.getElementById('authSub').textContent = '无法读取管理员状态，请确认 API 已启动且为最新版本';
-        document.getElementById('setupBanner').classList.add('hidden');
-        document.getElementById('setupForm').classList.add('hidden');
-        document.getElementById('loginForm').classList.add('hidden');
+        hideAuthForms();
         setAuthError((e && e.message) || '检查失败');
       }
     }
@@ -548,6 +602,7 @@
 
     document.getElementById('loginBtn').onclick = async () => {
       try {
+        setAuthError('');
         const r = await api('/admin/login', {
           method: 'POST',
           body: JSON.stringify({
@@ -558,6 +613,42 @@
         afterAuth(r);
       } catch (e) {
         setAuthError(e.message || '登录失败');
+      }
+    };
+    document.getElementById('showResetBtn').onclick = () => {
+      if (state.recoveryEnabled) showResetMode();
+      else setAuthError('服务器未配置 ADMIN_RECOVERY_SECRET，无法在线重置密码。');
+    };
+    document.getElementById('backLoginBtn').onclick = () => showLoginMode();
+    document.getElementById('resetBtn').onclick = async () => {
+      const p1 = document.getElementById('resetPassword').value;
+      const p2 = document.getElementById('resetPassword2').value;
+      if (p1 !== p2) {
+        setAuthError('两次新密码不一致');
+        return;
+      }
+      try {
+        setAuthError('');
+        const r = await api('/admin/reset-password', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('resetUsername').value,
+            recovery_secret: document.getElementById('recoverySecret').value,
+            new_password: p1,
+          }),
+        });
+        document.getElementById('username').value = document.getElementById('resetUsername').value;
+        document.getElementById('password').value = '';
+        showLoginMode();
+        setAuthError('');
+        const ok = document.createElement('div');
+        ok.className = 'ok';
+        ok.textContent = (r && r.message) || '密码已重置，请登录';
+        document.getElementById('loginErr').className = 'ok';
+        document.getElementById('loginErr').textContent = (r && r.message) || '密码已重置，请登录';
+        document.getElementById('loginErr').classList.remove('hidden');
+      } catch (e) {
+        setAuthError(e.message || '重置失败');
       }
     };
     document.getElementById('setupBtn').onclick = async () => {

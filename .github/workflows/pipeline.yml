@@ -117,6 +117,7 @@ jobs:
     env:
       MEMOIR_PG_PASSWORD: ${{ secrets.MEMOIR_PG_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      ADMIN_RECOVERY_SECRET: ${{ secrets.ADMIN_RECOVERY_SECRET }}
       LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_MODEL: ${{ secrets.LLM_MODEL || 'gpt-4o-mini' }}
@@ -140,6 +141,7 @@ jobs:
             printf 'MEMOIR_API_BIND_HOST=172.17.0.1\n'
             printf 'MEMOIR_API_HOST_PORT=18080\n'
             printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+            printf 'ADMIN_RECOVERY_SECRET=%s\n' "$ADMIN_RECOVERY_SECRET"
             printf 'RUST_LOG=info\n'
             printf 'LLM_API_BASE=%s\n' "$LLM_API_BASE"
             printf 'LLM_API_KEY=%s\n' "$LLM_API_KEY"

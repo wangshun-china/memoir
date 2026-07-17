@@ -62,7 +62,7 @@ async fn dev_login(
     Json(body): Json<DevLoginRequest>,
 ) -> AppResult<Json<AuthResponse>> {
     if !state.config.allow_dev_login {
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden("开发登录未启用（ALLOW_DEV_LOGIN）".into()));
     }
     let openid = body
         .openid
