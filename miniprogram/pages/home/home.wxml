@@ -63,15 +63,40 @@
           <text class="chevron">›</text>
         </view>
         <view class="card-tags">
-          <text class="tag">可继续采访</text>
+          <!-- has_interview is normalized in home.ts (message_count / continue_session_id) -->
+          <text wx:if="{{item.has_interview}}" class="tag soft">采访中 · 已保存 {{item.message_count || 0}} 条</text>
+          <text wx:else class="tag">尚未开始采访</text>
         </view>
         <view class="card-actions">
           <button
+            wx:if="{{!item.has_interview}}"
             class="btn-secondary start-btn"
             size="mini"
             catchtap="onStartInterview"
             data-id="{{item.id}}"
-          >开始 / 继续采访</button>
+          >开始采访</button>
+          <button
+            wx:else
+            class="btn-secondary start-btn"
+            size="mini"
+            catchtap="onContinueInterview"
+            data-id="{{item.id}}"
+            data-session-id="{{item.continue_session_id}}"
+            data-topic="{{item.continue_topic || '童年与家庭'}}"
+          >继续采访</button>
+          <button
+            class="btn-secondary start-btn"
+            size="mini"
+            catchtap="onOpenReader"
+            data-id="{{item.id}}"
+          >查看正文</button>
+          <button
+            class="btn-danger-mini start-btn"
+            size="mini"
+            catchtap="onDeleteMemoir"
+            data-id="{{item.id}}"
+            data-title="{{item.title}}"
+          >删除</button>
         </view>
       </view>
     </view>

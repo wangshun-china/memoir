@@ -3,7 +3,8 @@
     "pages/home/home",
     "pages/mine/mine",
     "pages/create/create",
-    "pages/interview/interview"
+    "pages/interview/interview",
+    "pages/reader/reader"
   ],
   "window": {
     "navigationBarTextStyle": "black",
@@ -31,18 +32,6 @@
     ]
   },
   "style": "v2",
-  "renderer": "skyline",
-  "rendererOptions": {
-    "skyline": {
-      "defaultDisplayBlock": true,
-      "defaultContentBox": true,
-      "tagNameStyleIsolation": "legacy",
-      "disableABTest": true,
-      "sdkVersionBegin": "3.0.0",
-      "sdkVersionEnd": "15.255.255"
-    }
-  },
-  "componentFramework": "glass-easel",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
 }

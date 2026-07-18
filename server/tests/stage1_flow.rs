@@ -163,6 +163,30 @@ async fn create_memoir_seeds_nine_default_chapters() {
     assert_eq!(listed_arr.len(), 9);
     assert_eq!(listed_arr[0]["title"], "童年与家庭");
     assert_eq!(listed_arr[8]["title"], "我想留下的话");
+    // Progress fields present even when empty.
+    assert_eq!(listed_arr[0]["has_interview"], false);
+    assert_eq!(listed_arr[0]["has_draft"], false);
+    assert_eq!(listed_arr[0]["message_count"], 0);
+
+    // Delete memoir (and cascade).
+    let (status, _) = json_request(
+        &app,
+        "DELETE",
+        &format!("/api/v1/memoirs/{memoir_id}"),
+        Some(token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, again) = json_request(
+        &app,
+        "GET",
+        &format!("/api/v1/memoirs/{memoir_id}"),
+        Some(token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{again}");
 
     cleanup_user(&state.pool, user_id).await;
 }
@@ -212,6 +236,45 @@ async fn interview_message_round_trip_and_finish() {
     let session_id = session_body["session"]["id"].as_str().unwrap();
     assert_eq!(session_body["session"]["status"], "active");
     assert_eq!(session_body["opening_message"]["role"], "assistant");
+    assert_eq!(session_body["resumed"], false);
+
+    // Re-enter same memoir+topic must resume, not create a fresh empty chat.
+    let (status, resume_body) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/memoirs/{memoir_id}/interviews"),
+        Some(token),
+        Some(json!({ "topic": "童年与家庭" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resume_body}");
+    assert_eq!(resume_body["resumed"], true);
+    assert_eq!(resume_body["session"]["id"], session_id);
+
+    // Continue-by-id must keep the same session (home「继续采访」路径).
+    let (status, cont) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/interviews/{session_id}/continue"),
+        Some(token),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{cont}");
+    assert_eq!(cont["resumed"], true);
+    assert_eq!(cont["session"]["id"], session_id);
+
+    // List memoirs exposes has_interview + continue_session_id for button split.
+    let (status, listed) = json_request(&app, "GET", "/api/v1/memoirs", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let item = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == memoir_id)
+        .expect("memoir in list");
+    assert_eq!(item["has_interview"], true);
+    assert_eq!(item["continue_session_id"], session_id);
 
     let user_text = "I walked to school when I was a child.";
     let (status, msg_resp) = json_request(
@@ -226,6 +289,7 @@ async fn interview_message_round_trip_and_finish() {
     assert_eq!(msg_resp["user_message"]["role"], "user");
     assert_eq!(msg_resp["user_message"]["content"], user_text);
     assert_eq!(msg_resp["assistant_message"]["role"], "assistant");
+    assert_eq!(msg_resp["user_turn_count"], 1);
     let assistant = msg_resp["assistant_message"]["content"]
         .as_str()
         .unwrap_or("");
@@ -249,6 +313,37 @@ async fn interview_message_round_trip_and_finish() {
         msgs.iter().any(|m| m["content"] == user_text),
         "user content must be re-listable"
     );
+
+    // Manual generate chapter draft and persist to chapters.content
+    let (status, gen) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/interviews/{session_id}/generate"),
+        Some(token),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{gen}");
+    assert_eq!(gen["chapter"]["title"], "童年与家庭");
+    assert_eq!(gen["chapter"]["status"], "draft");
+    let content = gen["chapter"]["content"].as_str().unwrap_or("");
+    assert!(!content.is_empty(), "generated content must be stored");
+
+    let (status, chapters) = json_request(
+        &app,
+        "GET",
+        &format!("/api/v1/memoirs/{memoir_id}/chapters"),
+        Some(token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{chapters}");
+    let ch0 = &chapters.as_array().unwrap()[0];
+    assert_eq!(ch0["title"], "童年与家庭");
+    assert!(!ch0["content"].as_str().unwrap_or("").is_empty());
+    assert_eq!(ch0["has_interview"], true, "reader must not show 待采访 after dialogue");
+    assert_eq!(ch0["has_draft"], true);
+    assert!(ch0["message_count"].as_i64().unwrap_or(0) >= 1);
 
     let (status, finished) = json_request(
         &app,

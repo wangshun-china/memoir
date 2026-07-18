@@ -42,8 +42,32 @@ pub struct Chapter {
     pub sort_order: i32,
     pub status: String,
     pub summary: Option<String>,
+    /// Generated chapter draft body (from interview transcript).
+    pub content: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Chapter row for reader/home UI: includes live interview progress (not only DB status).
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ChapterProgress {
+    pub id: Uuid,
+    pub memoir_id: Uuid,
+    pub title: String,
+    pub sort_order: i32,
+    pub status: String,
+    pub summary: Option<String>,
+    pub content: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// Messages linked by chapter_id or matching topic title.
+    pub message_count: i64,
+    /// Latest session for this chapter/topic (active preferred).
+    pub continue_session_id: Option<Uuid>,
+    /// True when any interview transcript exists for this chapter.
+    pub has_interview: bool,
+    /// True when generated content is non-empty or status is draft/confirmed.
+    pub has_draft: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,12 +156,81 @@ pub async fn seed_default_chapters(
     Ok(chapters)
 }
 
-pub async fn list_memoirs(pool: &PgPool, user_id: Uuid) -> AppResult<Vec<Memoir>> {
-    let rows = sqlx::query_as::<_, Memoir>(
+/// Memoir card for home list: includes interview progress so UI can show 开始 vs 继续.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MemoirListItem {
+    pub id: Uuid,
+    pub owner_user_id: Option<Uuid>,
+    pub creator_user_id: Uuid,
+    pub title: String,
+    pub subject_name: String,
+    pub birth_year: Option<i32>,
+    pub birth_place: Option<String>,
+    pub preferred_name: Option<String>,
+    pub creator_relation: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// Total interview messages under this memoir (all sessions).
+    pub message_count: i64,
+    /// True once any interview session exists (even opening-only).
+    pub has_interview: bool,
+    /// Prefer active session; otherwise latest session with any messages / latest session.
+    pub continue_session_id: Option<Uuid>,
+    pub continue_topic: Option<String>,
+}
+
+pub async fn list_memoirs(pool: &PgPool, user_id: Uuid) -> AppResult<Vec<MemoirListItem>> {
+    let rows = sqlx::query_as::<_, MemoirListItem>(
         r#"
-        SELECT * FROM memoirs
-        WHERE creator_user_id = $1 OR owner_user_id = $1
-        ORDER BY created_at DESC
+        SELECT
+          m.id,
+          m.owner_user_id,
+          m.creator_user_id,
+          m.title,
+          m.subject_name,
+          m.birth_year,
+          m.birth_place,
+          m.preferred_name,
+          m.creator_relation,
+          m.status,
+          m.created_at,
+          m.updated_at,
+          COALESCE((
+            SELECT COUNT(*)::bigint
+            FROM interview_messages im
+            JOIN interview_sessions s ON s.id = im.session_id
+            WHERE s.memoir_id = m.id
+          ), 0) AS message_count,
+          (
+            EXISTS(SELECT 1 FROM interview_sessions s WHERE s.memoir_id = m.id)
+            OR EXISTS(
+              SELECT 1 FROM interview_messages im
+              JOIN interview_sessions s ON s.id = im.session_id
+              WHERE s.memoir_id = m.id
+            )
+          ) AS has_interview,
+          (
+            SELECT s.id
+            FROM interview_sessions s
+            WHERE s.memoir_id = m.id
+            ORDER BY
+              CASE WHEN s.status = 'active' THEN 0 ELSE 1 END,
+              s.started_at DESC
+            LIMIT 1
+          ) AS continue_session_id,
+          (
+            SELECT s.topic
+            FROM interview_sessions s
+            WHERE s.memoir_id = m.id
+            ORDER BY
+              CASE WHEN s.status = 'active' THEN 0 ELSE 1 END,
+              s.started_at DESC
+            LIMIT 1
+          ) AS continue_topic
+        FROM memoirs m
+        WHERE m.creator_user_id = $1 OR m.owner_user_id = $1
+        ORDER BY m.created_at DESC
         "#,
     )
     .bind(user_id)
@@ -165,18 +258,81 @@ pub async fn list_chapters(
     pool: &PgPool,
     user_id: Uuid,
     memoir_id: Uuid,
-) -> AppResult<Vec<Chapter>> {
+) -> AppResult<Vec<ChapterProgress>> {
     // ownership check
     let _ = get_memoir(pool, user_id, memoir_id).await?;
-    let rows = sqlx::query_as::<_, Chapter>(
+    let rows = sqlx::query_as::<_, ChapterProgress>(
         r#"
-        SELECT * FROM chapters
-        WHERE memoir_id = $1
-        ORDER BY sort_order ASC
+        SELECT
+          c.id,
+          c.memoir_id,
+          c.title,
+          c.sort_order,
+          c.status,
+          c.summary,
+          c.content,
+          c.created_at,
+          c.updated_at,
+          COALESCE((
+            SELECT COUNT(*)::bigint
+            FROM interview_messages im
+            JOIN interview_sessions s ON s.id = im.session_id
+            WHERE s.memoir_id = c.memoir_id
+              AND (s.chapter_id = c.id OR s.topic = c.title)
+          ), 0) AS message_count,
+          (
+            SELECT s.id
+            FROM interview_sessions s
+            WHERE s.memoir_id = c.memoir_id
+              AND (s.chapter_id = c.id OR s.topic = c.title)
+            ORDER BY
+              CASE WHEN s.status = 'active' THEN 0 ELSE 1 END,
+              s.started_at DESC
+            LIMIT 1
+          ) AS continue_session_id,
+          (
+            EXISTS(
+              SELECT 1 FROM interview_sessions s
+              WHERE s.memoir_id = c.memoir_id
+                AND (s.chapter_id = c.id OR s.topic = c.title)
+            )
+            OR EXISTS(
+              SELECT 1
+              FROM interview_messages im
+              JOIN interview_sessions s ON s.id = im.session_id
+              WHERE s.memoir_id = c.memoir_id
+                AND (s.chapter_id = c.id OR s.topic = c.title)
+            )
+          ) AS has_interview,
+          (
+            (c.content IS NOT NULL AND length(trim(c.content)) > 0)
+            OR c.status IN ('draft', 'confirmed')
+          ) AS has_draft
+        FROM chapters c
+        WHERE c.memoir_id = $1
+        ORDER BY c.sort_order ASC
         "#,
     )
     .bind(memoir_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+/// Soft ownership delete: cascades sessions/messages/chapters via FK.
+pub async fn delete_memoir(pool: &PgPool, user_id: Uuid, memoir_id: Uuid) -> AppResult<()> {
+    let res = sqlx::query(
+        r#"
+        DELETE FROM memoirs
+        WHERE id = $1 AND (creator_user_id = $2 OR owner_user_id = $2)
+        "#,
+    )
+    .bind(memoir_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound("memoir not found".into()));
+    }
+    Ok(())
 }

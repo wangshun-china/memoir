@@ -17,12 +17,23 @@
         <image wx:if="{{avatarUrl}}" class="avatar-img" src="{{avatarUrl}}" mode="aspectFill" />
         <view wx:else class="avatar big">{{nickInitial}}</view>
       </button>
+      <!-- 展示态用 text；编辑态才挂载非受控 input，避免 value+setData 打断中文输入法 -->
+      <view wx:if="{{!editingNick}}" class="name-display" bindtap="onStartEditNick">
+        <text class="name-text">{{nickname || '点击填写昵称'}}</text>
+        <text class="name-edit-hint">编辑</text>
+      </view>
       <input
+        wx:else
         class="name-input"
-        type="nickname"
-        placeholder="点击填写昵称"
-        value="{{nickname}}"
+        placeholder="填写昵称"
+        value="{{nickSeed}}"
+        maxlength="32"
+        focus="{{true}}"
+        hold-keyboard="{{true}}"
+        adjust-position="{{true}}"
+        bindinput="onNicknameInput"
         bindblur="onNicknameBlur"
+        bindconfirm="onNicknameBlur"
       />
       <text class="desc">微信登录用户 · 数据仅本人可见</text>
     </view>

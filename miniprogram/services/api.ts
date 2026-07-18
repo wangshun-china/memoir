@@ -35,6 +35,8 @@ interface RequestOptions {
   method?: Method
   data?: WechatMiniprogram.IAnyObject | string
   auth?: boolean
+  /** ms; LLM-backed routes need longer than the WeChat default (~60s). */
+  timeout?: number
 }
 
 export function request<T = WechatMiniprogram.IAnyObject>(options: RequestOptions): Promise<T> {
@@ -56,6 +58,8 @@ export function request<T = WechatMiniprogram.IAnyObject>(options: RequestOption
       method,
       data: options.data,
       header,
+      // Default 90s; interview/generate can still take tens of seconds even after caps.
+      timeout: options.timeout ?? 90000,
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data as T)
@@ -183,6 +187,11 @@ export interface Memoir {
   preferred_name?: string
   creator_relation?: string
   status: string
+  /** Present on list endpoint: whether any interview session exists. */
+  has_interview?: boolean
+  message_count?: number
+  continue_session_id?: string
+  continue_topic?: string
 }
 
 export interface Chapter {
@@ -191,6 +200,13 @@ export interface Chapter {
   title: string
   sort_order: number
   status: string
+  summary?: string
+  content?: string
+  /** Present on list chapters: interview progress for this chapter/topic. */
+  message_count?: number
+  continue_session_id?: string
+  has_interview?: boolean
+  has_draft?: boolean
 }
 
 export interface MemoirWithChapters extends Memoir {
@@ -220,12 +236,19 @@ export function listChapters(memoirId: string) {
   return request<Chapter[]>({ path: `/memoirs/${memoirId}/chapters` })
 }
 
+/** Delete memoir and cascaded chapters / interviews / messages. */
+export function deleteMemoir(id: string) {
+  return request<void>({ path: `/memoirs/${id}`, method: 'DELETE' })
+}
+
 export interface InterviewSession {
   id: string
   memoir_id: string
   chapter_id?: string
   topic: string
   status: string
+  summary?: string
+  auto_generated_at?: string
 }
 
 export interface InterviewMessage {
@@ -236,11 +259,53 @@ export interface InterviewMessage {
   question_type?: string
 }
 
-export function startInterview(memoirId: string, topic: string, chapterId?: string) {
-  return request<{ session: InterviewSession; opening_message: InterviewMessage }>({
+export interface GeneratedChapter {
+  chapter: Chapter
+  session_summary?: string
+  trigger: string
+  user_turn_count: number
+}
+
+export interface StartInterviewResult {
+  session: InterviewSession
+  opening_message?: InterviewMessage
+  resumed: boolean
+  user_turn_count: number
+  auto_generate_at: number
+}
+
+export interface PostMessageResult {
+  user_message: InterviewMessage
+  assistant_message?: InterviewMessage
+  session_status: string
+  user_turn_count: number
+  auto_generate_at: number
+  generated?: GeneratedChapter
+}
+
+/** First-time start only. Use forceNew when you intentionally want a fresh session. */
+export function startInterview(
+  memoirId: string,
+  topic: string,
+  options?: { chapterId?: string; forceNew?: boolean },
+) {
+  return request<StartInterviewResult>({
     path: `/memoirs/${memoirId}/interviews`,
     method: 'POST',
-    data: { topic, chapter_id: chapterId },
+    data: {
+      topic,
+      chapter_id: options?.chapterId,
+      force_new: options?.forceNew ?? false,
+    },
+  })
+}
+
+/** Continue an existing session by id — never creates a new empty chat. */
+export function continueInterview(sessionId: string) {
+  return request<StartInterviewResult>({
+    path: `/interviews/${sessionId}/continue`,
+    method: 'POST',
+    data: {},
   })
 }
 
@@ -253,14 +318,11 @@ export function postMessage(
   content: string,
   action: 'normal' | 'dont_know' | 'change_question' | 'prefer_not' | 'end' = 'normal',
 ) {
-  return request<{
-    user_message: InterviewMessage
-    assistant_message?: InterviewMessage
-    session_status: string
-  }>({
+  return request<PostMessageResult>({
     path: `/interviews/${sessionId}/messages`,
     method: 'POST',
     data: { content, action },
+    timeout: 120000,
   })
 }
 
@@ -269,5 +331,15 @@ export function finishInterview(sessionId: string) {
     path: `/interviews/${sessionId}/finish`,
     method: 'POST',
     data: {},
+  })
+}
+
+/** Generate chapter draft from session transcript and save to chapters.content. */
+export function generateChapter(sessionId: string) {
+  return request<GeneratedChapter>({
+    path: `/interviews/${sessionId}/generate`,
+    method: 'POST',
+    data: {},
+    timeout: 120000,
   })
 }

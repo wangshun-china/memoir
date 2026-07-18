@@ -4,9 +4,12 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::llm::interviewer;
-use crate::memoirs::service::get_memoir;
+use crate::llm::{chapter as chapter_llm, interviewer};
+use crate::memoirs::service::{get_memoir, Chapter};
 use crate::state::AppState;
+
+/// User turns (role=user) that trigger automatic chapter generation.
+pub const AUTO_GENERATE_USER_TURNS: i64 = 20;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct InterviewSession {
@@ -18,6 +21,7 @@ pub struct InterviewSession {
     pub summary: Option<String>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+    pub auto_generated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -34,6 +38,8 @@ pub struct InterviewMessage {
 pub struct CreateInterviewRequest {
     pub topic: Option<String>,
     pub chapter_id: Option<Uuid>,
+    /// When true (default), resume an active session for same memoir+topic if any.
+    pub force_new: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,10 +50,30 @@ pub struct PostMessageRequest {
 }
 
 #[derive(Debug, Serialize)]
+pub struct GeneratedChapter {
+    pub chapter: Chapter,
+    pub session_summary: Option<String>,
+    pub trigger: String,
+    pub user_turn_count: i64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct PostMessageResponse {
     pub user_message: InterviewMessage,
     pub assistant_message: Option<InterviewMessage>,
     pub session_status: String,
+    pub user_turn_count: i64,
+    pub auto_generate_at: i64,
+    pub generated: Option<GeneratedChapter>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateSessionResponse {
+    pub session: InterviewSession,
+    pub opening_message: Option<InterviewMessage>,
+    pub resumed: bool,
+    pub user_turn_count: i64,
+    pub auto_generate_at: i64,
 }
 
 pub async fn create_session(
@@ -55,7 +81,7 @@ pub async fn create_session(
     user_id: Uuid,
     memoir_id: Uuid,
     req: CreateInterviewRequest,
-) -> AppResult<(InterviewSession, InterviewMessage)> {
+) -> AppResult<CreateSessionResponse> {
     let memoir = get_memoir(pool, user_id, memoir_id).await?;
 
     let topic = req
@@ -65,6 +91,8 @@ pub async fn create_session(
         .filter(|s| !s.is_empty())
         .unwrap_or("童年与家庭")
         .to_string();
+
+    let force_new = req.force_new.unwrap_or(false);
 
     if let Some(chapter_id) = req.chapter_id {
         let owns = sqlx::query_scalar::<_, bool>(
@@ -87,6 +115,40 @@ pub async fn create_session(
         }
     }
 
+    // Resume: prefer active same-topic, else latest session on this memoir (reopen if finished).
+    // force_new is only for explicit「开始采访」when there is no history.
+    if !force_new {
+        if let Some(existing) = find_resumable_session(pool, memoir_id, &topic).await? {
+            let session = reopen_if_needed(pool, existing).await?;
+            let turns = count_user_turns(pool, session.id).await?;
+            return Ok(CreateSessionResponse {
+                session,
+                opening_message: None,
+                resumed: true,
+                user_turn_count: turns,
+                auto_generate_at: AUTO_GENERATE_USER_TURNS,
+            });
+        }
+    }
+
+    // Bind chapter by matching topic title when not provided.
+    let chapter_id = if req.chapter_id.is_some() {
+        req.chapter_id
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT id FROM chapters
+            WHERE memoir_id = $1 AND title = $2
+            ORDER BY sort_order ASC
+            LIMIT 1
+            "#,
+        )
+        .bind(memoir_id)
+        .bind(&topic)
+        .fetch_optional(pool)
+        .await?
+    };
+
     let session = sqlx::query_as::<_, InterviewSession>(
         r#"
         INSERT INTO interview_sessions (memoir_id, chapter_id, topic, status)
@@ -95,7 +157,7 @@ pub async fn create_session(
         "#,
     )
     .bind(memoir_id)
-    .bind(req.chapter_id)
+    .bind(chapter_id)
     .bind(&topic)
     .fetch_one(pool)
     .await?;
@@ -108,7 +170,123 @@ pub async fn create_session(
 
     let assistant =
         insert_message(pool, session.id, "assistant", &opening, Some("opening")).await?;
-    Ok((session, assistant))
+
+    // Mark chapter as collecting when interview starts.
+    if let Some(cid) = chapter_id {
+        let _ = sqlx::query(
+            r#"
+            UPDATE chapters
+            SET status = CASE WHEN status = 'empty' THEN 'collecting' ELSE status END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(cid)
+        .execute(pool)
+        .await;
+    }
+
+    Ok(CreateSessionResponse {
+        session,
+        opening_message: Some(assistant),
+        resumed: false,
+        user_turn_count: 0,
+        auto_generate_at: AUTO_GENERATE_USER_TURNS,
+    })
+}
+
+/// Prefer active session for topic, then any active on memoir, then latest session overall.
+async fn find_resumable_session(
+    pool: &PgPool,
+    memoir_id: Uuid,
+    topic: &str,
+) -> AppResult<Option<InterviewSession>> {
+    if let Some(row) = sqlx::query_as::<_, InterviewSession>(
+        r#"
+        SELECT *
+        FROM interview_sessions
+        WHERE memoir_id = $1 AND topic = $2 AND status = 'active'
+        ORDER BY started_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(memoir_id)
+    .bind(topic)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(Some(row));
+    }
+
+    if let Some(row) = sqlx::query_as::<_, InterviewSession>(
+        r#"
+        SELECT *
+        FROM interview_sessions
+        WHERE memoir_id = $1 AND status = 'active'
+        ORDER BY started_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(memoir_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(Some(row));
+    }
+
+    let row = sqlx::query_as::<_, InterviewSession>(
+        r#"
+        SELECT *
+        FROM interview_sessions
+        WHERE memoir_id = $1
+        ORDER BY started_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(memoir_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+/// Re-open a finished session so the user can continue the same transcript.
+pub async fn reopen_if_needed(
+    pool: &PgPool,
+    session: InterviewSession,
+) -> AppResult<InterviewSession> {
+    if session.status == "active" {
+        return Ok(session);
+    }
+    let row = sqlx::query_as::<_, InterviewSession>(
+        r#"
+        UPDATE interview_sessions
+        SET status = 'active', finished_at = NULL
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(session.id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
+/// Continue a known session by id (does not create a new session).
+pub async fn continue_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> AppResult<CreateSessionResponse> {
+    let session = get_session(pool, user_id, session_id).await?;
+    let session = reopen_if_needed(pool, session).await?;
+    let turns = count_user_turns(pool, session.id).await?;
+    Ok(CreateSessionResponse {
+        session,
+        opening_message: None,
+        resumed: true,
+        user_turn_count: turns,
+        auto_generate_at: AUTO_GENERATE_USER_TURNS,
+    })
 }
 
 fn preferred_address(preferred: &Option<String>, subject: &str) -> String {
@@ -165,6 +343,19 @@ pub async fn list_messages(
     Ok(rows)
 }
 
+pub async fn count_user_turns(pool: &PgPool, session_id: Uuid) -> AppResult<i64> {
+    let n = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*) FROM interview_messages
+        WHERE session_id = $1 AND role = 'user'
+        "#,
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
 pub async fn post_message(
     state: &AppState,
     user_id: Uuid,
@@ -178,7 +369,6 @@ pub async fn post_message(
 
     let action = req.action.as_deref().unwrap_or("normal");
     if action == "end" {
-        // Persist optional farewell note as user message if content provided.
         let content = if req.content.trim().is_empty() {
             "结束本次采访".to_string()
         } else {
@@ -186,11 +376,15 @@ pub async fn post_message(
         };
         let user_message =
             insert_message(&state.pool, session_id, "user", &content, Some("end")).await?;
+        let turns = count_user_turns(&state.pool, session_id).await?;
         let session = finish_session(&state.pool, user_id, session_id).await?;
         return Ok(PostMessageResponse {
             user_message,
             assistant_message: None,
             session_status: session.status,
+            user_turn_count: turns,
+            auto_generate_at: AUTO_GENERATE_USER_TURNS,
+            generated: None,
         });
     }
 
@@ -219,7 +413,7 @@ pub async fn post_message(
         }
     };
 
-    // 1) Persist user turn first, release connection before LLM.
+    // 1) Persist user turn first — every message is stored in interview_messages.
     let user_message = insert_message(
         &state.pool,
         session_id,
@@ -262,7 +456,6 @@ pub async fn post_message(
             c
         }
         Err(e) => {
-            // Keep full error in DB usage logs for admin diagnosis; user still gets a soft follow-up.
             let err = e.to_string();
             tracing::error!(error = %err, "LLM failed during interview; using soft recovery reply");
             let _ = crate::settings::record_usage(
@@ -299,10 +492,44 @@ pub async fn post_message(
     )
     .await?;
 
+    // Mark chapter collecting once real dialogue exists.
+    if let Some(cid) = session.chapter_id {
+        let _ = sqlx::query(
+            r#"
+            UPDATE chapters
+            SET status = CASE WHEN status IN ('empty', 'collecting') THEN 'collecting' ELSE status END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(cid)
+        .execute(&state.pool)
+        .await;
+    }
+
+    let turns = count_user_turns(&state.pool, session_id).await?;
+
+    // 4) Auto-generate chapter draft when threshold reached (once per session).
+    let mut generated = None;
+    if turns >= AUTO_GENERATE_USER_TURNS {
+        let sess = get_session(&state.pool, user_id, session_id).await?;
+        if sess.auto_generated_at.is_none() {
+            match generate_from_session(state, user_id, session_id, "auto").await {
+                Ok(g) => generated = Some(g),
+                Err(e) => {
+                    tracing::warn!(error = %e, "auto chapter generation failed");
+                }
+            }
+        }
+    }
+
     Ok(PostMessageResponse {
         user_message,
         assistant_message: Some(assistant_message),
         session_status: "active".into(),
+        user_turn_count: turns,
+        auto_generate_at: AUTO_GENERATE_USER_TURNS,
+        generated,
     })
 }
 
@@ -324,6 +551,149 @@ pub async fn finish_session(
     .fetch_one(pool)
     .await?;
     Ok(session)
+}
+
+/// Manually (or auto) generate chapter draft from this session's messages and persist to DB.
+pub async fn generate_from_session(
+    state: &AppState,
+    user_id: Uuid,
+    session_id: Uuid,
+    trigger: &str,
+) -> AppResult<GeneratedChapter> {
+    let session = get_session(&state.pool, user_id, session_id).await?;
+    let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
+    let history = list_messages(&state.pool, user_id, session_id).await?;
+    let turns = count_user_turns(&state.pool, session_id).await?;
+
+    if history.iter().filter(|m| m.role == "user").count() == 0 {
+        return Err(AppError::BadRequest(
+            "还没有对话内容，请先回答几个问题再生成".into(),
+        ));
+    }
+
+    let client = {
+        let runtime = state.llm_runtime.read().await;
+        runtime.client.clone()
+    };
+
+    let draft = match chapter_llm::generate_chapter_draft(
+        client.as_ref(),
+        &session.topic,
+        &memoir.subject_name,
+        &history,
+    )
+    .await
+    {
+        Ok(c) => {
+            let _ = crate::settings::record_usage(
+                &state.pool,
+                "chapter_generate",
+                &c.model,
+                c.prompt_tokens,
+                c.completion_tokens,
+                c.total_tokens,
+                c.latency_ms,
+                true,
+                None,
+            )
+            .await;
+            c.content
+        }
+        Err(e) => {
+            let err = e.to_string();
+            tracing::error!(error = %err, "LLM chapter generate failed; using transcript fallback");
+            let _ = crate::settings::record_usage(
+                &state.pool,
+                "chapter_generate",
+                client.model_name(),
+                0,
+                0,
+                0,
+                0,
+                false,
+                Some(&err),
+            )
+            .await;
+            chapter_llm::fallback_chapter_draft(&session.topic, &memoir.subject_name, &history)
+        }
+    };
+
+    let summary: String = draft.chars().take(200).collect();
+    let chapter_id = resolve_chapter_id(&state.pool, &session).await?;
+
+    let chapter = sqlx::query_as::<_, Chapter>(
+        r#"
+        UPDATE chapters
+        SET content = $2,
+            summary = $3,
+            status = 'draft',
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(chapter_id)
+    .bind(&draft)
+    .bind(&summary)
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Persist short summary on session; mark auto_generated when trigger is auto.
+    let session_summary = Some(summary.clone());
+    if trigger == "auto" {
+        sqlx::query(
+            r#"
+            UPDATE interview_sessions
+            SET summary = $2, auto_generated_at = NOW(), chapter_id = COALESCE(chapter_id, $3)
+            WHERE id = $1
+            "#,
+        )
+        .bind(session_id)
+        .bind(&summary)
+        .bind(chapter_id)
+        .execute(&state.pool)
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE interview_sessions
+            SET summary = $2, chapter_id = COALESCE(chapter_id, $3)
+            WHERE id = $1
+            "#,
+        )
+        .bind(session_id)
+        .bind(&summary)
+        .bind(chapter_id)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    Ok(GeneratedChapter {
+        chapter,
+        session_summary,
+        trigger: trigger.to_string(),
+        user_turn_count: turns,
+    })
+}
+
+async fn resolve_chapter_id(pool: &PgPool, session: &InterviewSession) -> AppResult<Uuid> {
+    if let Some(id) = session.chapter_id {
+        return Ok(id);
+    }
+    let id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id FROM chapters
+        WHERE memoir_id = $1 AND title = $2
+        ORDER BY sort_order ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(session.memoir_id)
+    .bind(&session.topic)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("matching chapter not found for topic".into()))?;
+    Ok(id)
 }
 
 async fn insert_message(

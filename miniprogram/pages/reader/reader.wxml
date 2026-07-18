@@ -1,0 +1,61 @@
+<navigation-bar title="回忆录正文" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+
+<view class="page">
+  <view wx:if="{{loading}}" class="state">加载中…</view>
+  <view wx:elif="{{error}}" class="state error">{{error}}</view>
+  <block wx:else>
+    <view class="header">
+      <text class="title">{{memoirTitle}}</text>
+      <text class="meta">主人 · {{subjectName}}</text>
+      <view class="header-actions">
+        <button class="btn-danger-outline" size="mini" loading="{{deleting}}" bindtap="onDeleteMemoir">删除回忆录</button>
+      </view>
+    </view>
+
+    <scroll-view scroll-x class="tabs" enhanced show-scrollbar="{{false}}">
+      <view class="tabs-inner">
+        <view
+          wx:for="{{chapters}}"
+          wx:key="id"
+          class="tab {{item.id === activeId ? 'tab-on' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onSelectChapter"
+        >
+          <text class="tab-title">{{item.title}}</text>
+          <text class="tab-status">{{item.statusLabel}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <scroll-view scroll-y class="body">
+      <view wx:if="{{activeContent}}" class="content-card">
+        <text class="content-text">{{activeContent}}</text>
+      </view>
+      <view wx:else class="empty-card">
+        <text class="empty-title">{{activeHasInterview ? '已有采访，尚未生成正文' : '本章还没有正文'}}</text>
+        <text class="empty-desc" wx:if="{{activeHasInterview}}">
+          本章已保存采访记录。可继续补充对话，或单独点「生成本章」整理成回忆录草稿。
+        </text>
+        <text class="empty-desc" wx:else>
+          请先进行文字采访。满 20 轮对话会自动生成；也可在采访页随时手动生成。
+        </text>
+      </view>
+
+      <!-- 去采访 与 生成 必须分开 -->
+      <view class="action-row">
+        <button class="btn-primary action-half" bindtap="onGoInterview">
+          {{activeHasInterview ? '继续采访' : '去采访'}}
+        </button>
+        <button
+          class="btn-secondary action-half"
+          loading="{{generating}}"
+          disabled="{{!activeHasInterview || generating}}"
+          bindtap="onGenerate"
+        >生成本章</button>
+      </view>
+      <text wx:if="{{activeHasInterview && !activeContent}}" class="action-hint">
+        生成不会清空对话，只会把口述整理成章节草稿。
+      </text>
+    </scroll-view>
+  </block>
+</view>

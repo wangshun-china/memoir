@@ -67,6 +67,29 @@
   color: #2a2318;
 }
 
+.name-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  margin: 0 auto 8rpx;
+  padding: 8rpx 16rpx;
+}
+
+.name-text {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2a2318;
+}
+
+.name-edit-hint {
+  font-size: 22rpx;
+  color: #c45c26;
+  padding: 4rpx 12rpx;
+  border: 1rpx solid rgba(196, 92, 38, 0.35);
+  border-radius: 999rpx;
+}
+
 .name-input {
   display: block;
   margin: 0 auto 8rpx;

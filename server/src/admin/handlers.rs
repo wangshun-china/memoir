@@ -520,7 +520,10 @@ async fn test_ai(
         },
     ];
 
-    match client.complete(&messages).await {
+    match client
+        .complete_with(&messages, crate::llm::client::CompleteOptions::admin_test())
+        .await
+    {
         Ok(comp) => {
             let _ = record_usage(
                 &state.pool,

@@ -19,7 +19,7 @@
     "packNpmRelationList": [],
     "ignoreUploadUnusedFiles": true,
     "compileHotReLoad": false,
-    "skylineRenderEnable": true,
+    "skylineRenderEnable": false,
     "es6": false,
     "compileWorklet": false,
     "uglifyFileName": false,

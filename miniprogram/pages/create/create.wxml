@@ -9,28 +9,65 @@
   <view class="form-card">
     <view class="field">
       <text class="label">回忆录主人姓名 <text class="req">*</text></text>
-      <input class="input" placeholder="例如：王大爷" value="{{subjectName}}" bindinput="onSubject" />
+      <!-- 不绑定 value + setData，避免输入法被重置成英文 -->
+      <input
+        class="input"
+        placeholder="例如：王大爷"
+        maxlength="40"
+        hold-keyboard="{{true}}"
+        adjust-position="{{true}}"
+        bindinput="onSubject"
+      />
     </view>
 
     <view class="field">
       <text class="label">希望系统如何称呼</text>
-      <input class="input" placeholder="例如：王大爷 / 父亲" value="{{preferredName}}" bindinput="onPreferred" />
+      <input
+        class="input"
+        placeholder="例如：王大爷 / 父亲"
+        maxlength="40"
+        hold-keyboard="{{true}}"
+        adjust-position="{{true}}"
+        bindinput="onPreferred"
+      />
     </view>
 
     <view class="field row">
       <view class="half">
         <text class="label">出生年份</text>
-        <input class="input" type="number" placeholder="1948" value="{{birthYear}}" bindinput="onBirthYear" />
+        <input
+          class="input"
+          type="number"
+          placeholder="1948"
+          maxlength="4"
+          hold-keyboard="{{true}}"
+          adjust-position="{{true}}"
+          bindinput="onBirthYear"
+        />
       </view>
       <view class="half">
         <text class="label">出生地</text>
-        <input class="input" placeholder="河北某县" value="{{birthPlace}}" bindinput="onBirthPlace" />
+        <input
+          class="input"
+          placeholder="河北某县"
+          maxlength="40"
+          hold-keyboard="{{true}}"
+          adjust-position="{{true}}"
+          bindinput="onBirthPlace"
+        />
       </view>
     </view>
 
     <view class="field">
       <text class="label">您与主人的关系</text>
-      <input class="input" placeholder="儿子 / 女儿 / 本人" value="{{relation}}" bindinput="onRelation" />
+      <input
+        class="input"
+        placeholder="儿子 / 女儿 / 本人"
+        maxlength="20"
+        hold-keyboard="{{true}}"
+        adjust-position="{{true}}"
+        bindinput="onRelation"
+      />
     </view>
   </view>
 

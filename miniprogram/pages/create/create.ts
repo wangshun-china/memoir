@@ -1,34 +1,46 @@
 import { createMemoir, ensureLogin } from '../../services/api'
 
+type FormFields = {
+  subjectName: string
+  preferredName: string
+  birthYear: string
+  birthPlace: string
+  relation: string
+}
+
 Page({
   data: {
+    submitting: false,
+    error: '',
+  },
+
+  // 输入内容放实例字段，避免 setData 回写 value 打断中文输入法
+  _form: {
     subjectName: '',
     preferredName: '',
     birthYear: '',
     birthPlace: '',
     relation: '',
-    submitting: false,
-    error: '',
-  },
+  } as FormFields,
 
   onSubject(e: WechatMiniprogram.Input) {
-    this.setData({ subjectName: e.detail.value })
+    this._form.subjectName = e.detail.value || ''
   },
   onPreferred(e: WechatMiniprogram.Input) {
-    this.setData({ preferredName: e.detail.value })
+    this._form.preferredName = e.detail.value || ''
   },
   onBirthYear(e: WechatMiniprogram.Input) {
-    this.setData({ birthYear: e.detail.value })
+    this._form.birthYear = e.detail.value || ''
   },
   onBirthPlace(e: WechatMiniprogram.Input) {
-    this.setData({ birthPlace: e.detail.value })
+    this._form.birthPlace = e.detail.value || ''
   },
   onRelation(e: WechatMiniprogram.Input) {
-    this.setData({ relation: e.detail.value })
+    this._form.relation = e.detail.value || ''
   },
 
   async onSubmit() {
-    const subject = (this.data.subjectName || '').trim()
+    const subject = (this._form.subjectName || '').trim()
     if (!subject) {
       this.setData({ error: '请填写回忆录主人姓名' })
       return
@@ -36,17 +48,17 @@ Page({
     this.setData({ submitting: true, error: '' })
     try {
       await ensureLogin()
-      const birthYearRaw = (this.data.birthYear || '').trim()
+      const birthYearRaw = (this._form.birthYear || '').trim()
       const birth_year = birthYearRaw ? Number(birthYearRaw) : undefined
       const memoir = await createMemoir({
         subject_name: subject,
-        preferred_name: (this.data.preferredName || '').trim() || undefined,
+        preferred_name: (this._form.preferredName || '').trim() || undefined,
         birth_year: Number.isFinite(birth_year as number) ? birth_year : undefined,
-        birth_place: (this.data.birthPlace || '').trim() || undefined,
-        creator_relation: (this.data.relation || '').trim() || undefined,
+        birth_place: (this._form.birthPlace || '').trim() || undefined,
+        creator_relation: (this._form.relation || '').trim() || undefined,
       })
       wx.redirectTo({
-        url: `/pages/interview/interview?memoirId=${memoir.id}&topic=${encodeURIComponent('童年与家庭')}`,
+        url: `/pages/interview/interview?memoirId=${memoir.id}&mode=start&topic=${encodeURIComponent('童年与家庭')}`,
       })
     } catch (e: any) {
       this.setData({ submitting: false, error: e?.message || '创建失败' })
