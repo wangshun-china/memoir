@@ -33,10 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr: SocketAddr = config.listen_addr.parse()?;
     tracing::info!(%addr, "memoir-server listening");
-    tracing::info!(
-        admin = %format!("http://{addr}/admin/"),
-        "admin console"
-    );
+    tracing::info!("admin UI: miniprogram only (no web SPA)");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())

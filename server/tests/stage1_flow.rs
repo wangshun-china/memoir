@@ -380,6 +380,110 @@ async fn interview_message_round_trip_and_finish() {
     cleanup_user(&state.pool, user_id).await;
 }
 
+#[tokio::test]
+async fn password_login_auto_register_and_admin_username() {
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
+        return;
+    }
+    prepare_test_env();
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+    let uname = format!("u_{}", &Uuid::new_v4().to_string()[..8]);
+
+    let (status, reg) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": uname, "password": "password123" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reg}");
+    assert_eq!(reg["registered"], true);
+    assert_eq!(reg["is_admin"], false);
+    assert!(!reg["token"].as_str().unwrap_or("").is_empty());
+    let user_id = Uuid::parse_str(reg["user_id"].as_str().unwrap()).unwrap();
+
+    let (status, again) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": uname, "password": "password123" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert!(again.get("registered").is_none() || again["registered"] == false);
+
+    let (status, bad) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": uname, "password": "wrongpass99" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{bad}");
+
+    // Reserved admin username
+    let (status, admin) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": "wangshun", "password": "password123" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{admin}");
+    assert_eq!(admin["is_admin"], true);
+    let admin_token = admin["token"].as_str().unwrap();
+    let (status, overview) =
+        json_request(&app, "GET", "/api/v1/admin/overview", Some(admin_token), None).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+
+    // Forgot password with trial recovery key
+    let (status, reset) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/reset-password",
+        None,
+        Some(json!({
+            "username": uname,
+            "recovery_key": "wangshun",
+            "new_password": "newpass456"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reset}");
+    let (status, bad_key) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/reset-password",
+        None,
+        Some(json!({
+            "username": uname,
+            "recovery_key": "wrong",
+            "new_password": "newpass456"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{bad_key}");
+    let (status, with_new) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": uname, "password": "newpass456" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{with_new}");
+
+    cleanup_user(&state.pool, user_id).await;
+    if let Ok(aid) = Uuid::parse_str(admin["user_id"].as_str().unwrap_or("")) {
+        cleanup_user(&state.pool, aid).await;
+    }
+}
+
 #[test]
 fn default_chapter_titles_match_mvp_spec() {
     assert_eq!(

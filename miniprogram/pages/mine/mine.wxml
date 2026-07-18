@@ -4,8 +4,63 @@
   <view wx:if="{{!loggedIn}}" class="profile-card">
     <view class="avatar big">微</view>
     <text class="name">未登录</text>
-    <text class="desc">登录后可创建回忆录、保存采访记录</text>
-    <button class="btn-primary login-btn" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
+    <text class="desc">账号密码（未注册自动注册）或微信登录</text>
+    <view class="login-form" wx:if="{{!showForgot}}">
+      <input
+        class="login-input"
+        placeholder="账号"
+        maxlength="32"
+        value="{{accountUser}}"
+        bindinput="onAccountUser"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="密码（至少 8 位）"
+        maxlength="64"
+        value="{{accountPass}}"
+        bindinput="onAccountPass"
+      />
+      <button
+        class="btn-primary login-btn"
+        loading="{{accountLoggingIn}}"
+        bindtap="onAccountLogin"
+      >账号登录 / 注册</button>
+      <text class="login-link" bindtap="onToggleForgot">忘记密码？</text>
+    </view>
+    <view class="login-form" wx:else>
+      <input
+        class="login-input"
+        placeholder="账号"
+        maxlength="32"
+        value="{{accountUser}}"
+        bindinput="onAccountUser"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="恢复密钥（wangshun）"
+        maxlength="64"
+        value="{{recoveryKey}}"
+        bindinput="onRecoveryKey"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="新密码（至少 8 位）"
+        maxlength="64"
+        value="{{newPass}}"
+        bindinput="onNewPass"
+      />
+      <button
+        class="btn-primary login-btn"
+        loading="{{resetting}}"
+        bindtap="onResetPassword"
+      >确认重置</button>
+      <text class="login-link" bindtap="onToggleForgot">返回登录</text>
+    </view>
+    <view class="login-divider"><text class="login-divider-text">或</text></view>
+    <button class="btn-secondary login-btn" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
     <view wx:if="{{error}}" class="error">{{error}}</view>
   </view>
 
@@ -32,7 +87,11 @@
         bindblur="onNicknameBlur"
         bindconfirm="onNicknameBlur"
       />
-      <text class="desc">内容仅本人可见 · 家人可代为操作</text>
+      <text class="desc">
+        内容仅本人可见
+        <text wx:if="{{isAdmin}}"> · 管理员</text>
+        <text wx:if="{{username}}"> · {{username}}</text>
+      </text>
 
       <view class="stat-row">
         <view class="stat-item">
@@ -49,6 +108,13 @@
           <text class="menu-label">去整理回忆录</text>
         </view>
         <text class="menu-extra">首页 ›</text>
+      </view>
+      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="onAdmin">
+        <view class="menu-left">
+          <text class="menu-icon">🛡️</text>
+          <text class="menu-label">管理台</text>
+        </view>
+        <text class="menu-extra">概览 / 用户 / AI ›</text>
       </view>
       <view class="menu-item" bindtap="onShowHelp">
         <view class="menu-left">

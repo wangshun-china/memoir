@@ -14,7 +14,6 @@ pub struct Config {
     pub llm_api_base: Option<String>,
     pub llm_api_key: Option<String>,
     pub llm_model: String,
-    pub admin_static_dir: String,
 }
 
 impl Config {
@@ -39,7 +38,6 @@ impl Config {
             llm_api_base: env::var("LLM_API_BASE").ok().filter(|s| !s.is_empty()),
             llm_api_key: env::var("LLM_API_KEY").ok().filter(|s| !s.is_empty()),
             llm_model: env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
-            admin_static_dir: env::var("ADMIN_STATIC_DIR").unwrap_or_else(|_| "admin/dist".into()),
         })
     }
 

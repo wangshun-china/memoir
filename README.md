@@ -31,7 +31,7 @@ chmod +x scripts/*.sh deploy/deploy.sh
 本地地址：
 
 - API / 健康检查：`http://127.0.0.1:18081/health`
-- 管理台：`http://127.0.0.1:18081/admin/`
+- 管理台：小程序内「我的 → 管理台」（账号 `wangshun` 自动管理员；无网页管理端）
 - 小程序：优先写入 Windows **局域网 IP**（真机需再跑 `scripts/win_expose_api.ps1`）
 - PostgreSQL：`127.0.0.1:5433`
 

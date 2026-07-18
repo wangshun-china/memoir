@@ -18,9 +18,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder /tmp/memoir-server /usr/local/bin/memoir-server
 COPY migrations ./migrations
-COPY admin/dist ./admin/dist
 ENV LISTEN_ADDR=0.0.0.0:8080
-ENV ADMIN_STATIC_DIR=/app/admin/dist
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
   CMD curl -fsS http://127.0.0.1:8080/health >/dev/null || exit 1

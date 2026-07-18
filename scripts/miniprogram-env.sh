@@ -193,7 +193,7 @@ wait_local_api() {
   for i in $(seq 1 40); do
     if curl -fsS "http://127.0.0.1:${PORT_LOCAL}/health" >/dev/null 2>&1; then
       printf '[OK] local memoir-api healthy: http://127.0.0.1:%s\n' "$PORT_LOCAL"
-      printf '     admin: http://127.0.0.1:%s/admin/\n' "$PORT_LOCAL"
+      printf '     admin: miniprogram only (login as wangshun)\n'
       return 0
     fi
     sleep 1

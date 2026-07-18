@@ -264,6 +264,27 @@ async fn change_password(
         Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
     validate_password(&body.new_password)?;
 
+    // Miniprogram is_admin users change password on the users table.
+    if admin.via_user_admin {
+        let hash: Option<String> =
+            sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1 AND is_admin = TRUE")
+                .bind(admin_id)
+                .fetch_optional(&state.pool)
+                .await?
+                .flatten();
+        let hash = hash.ok_or_else(|| AppError::Unauthorized("登录已失效".into()))?;
+        if !verify_password(&body.current_password, &hash)? {
+            return Err(AppError::Unauthorized("当前密码不正确".into()));
+        }
+        let new_hash = hash_password(&body.new_password)?;
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+            .bind(&new_hash)
+            .bind(admin_id)
+            .execute(&state.pool)
+            .await?;
+        return Ok(Json(serde_json::json!({ "ok": true })));
+    }
+
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
         SELECT id, username, password_hash, display_name
@@ -305,6 +326,33 @@ struct AdminMe {
 async fn admin_me(State(state): State<AppState>, admin: AdminAuth) -> AppResult<Json<AdminMe>> {
     let admin_id =
         Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
+
+    if admin.via_user_admin {
+        #[derive(sqlx::FromRow)]
+        struct U {
+            id: Uuid,
+            nickname: String,
+            username: Option<String>,
+        }
+        let row = sqlx::query_as::<_, U>(
+            r#"
+            SELECT id, nickname, username FROM users
+            WHERE id = $1 AND is_admin = TRUE
+            "#,
+        )
+        .bind(admin_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("登录已失效".into()))?;
+        return Ok(Json(AdminMe {
+            admin_id: row.id,
+            username: row
+                .username
+                .unwrap_or_else(|| "admin".into()),
+            display_name: row.nickname,
+        }));
+    }
+
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
         SELECT id, username, password_hash, display_name
@@ -328,7 +376,9 @@ struct UserAdminRow {
     id: Uuid,
     wechat_openid: Option<String>,
     nickname: String,
+    username: Option<String>,
     role: String,
+    is_admin: bool,
     memoir_count: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -407,7 +457,7 @@ async fn list_users(
 ) -> AppResult<Json<Vec<UserAdminRow>>> {
     let rows = sqlx::query_as::<_, UserAdminRow>(
         r#"
-        SELECT u.id, u.wechat_openid, u.nickname, u.role,
+        SELECT u.id, u.wechat_openid, u.nickname, u.username, u.role, u.is_admin,
                (SELECT COUNT(*) FROM memoirs m WHERE m.creator_user_id = u.id) AS memoir_count,
                u.created_at, u.updated_at
         FROM users u

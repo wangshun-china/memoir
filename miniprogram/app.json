@@ -4,7 +4,8 @@
     "pages/mine/mine",
     "pages/create/create",
     "pages/interview/interview",
-    "pages/reader/reader"
+    "pages/reader/reader",
+    "pages/admin/admin"
   ],
   "window": {
     "navigationBarTextStyle": "black",

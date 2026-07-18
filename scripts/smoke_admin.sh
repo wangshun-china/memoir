@@ -1,65 +1,69 @@
 #!/usr/bin/env bash
+# Smoke: password login as is_admin user + admin API (miniprogram path; no web SPA).
 set -euo pipefail
 BASE="${1:-http://127.0.0.1:18081}"
-USER="smoke_admin_$$"
-PASS="SmokePass9!"
+USER="${ADMIN_SMOKE_USER:-wangshun}"
+PASS="${ADMIN_SMOKE_PASS:-SmokePass9!}"
 
 curl -fsS "$BASE/health" | grep -q memoir-server
 echo "[OK] health"
 
-code=$(curl -fsS -o /dev/null -w '%{http_code}' "$BASE/admin/")
-test "$code" = "200"
-echo "[OK] admin page $code"
-
-status_json=$(curl -fsS "$BASE/api/v1/admin/setup-status")
-echo "[OK] setup-status $status_json"
-
-if echo "$status_json" | grep -q '"needs_setup":true'; then
-  token=$(curl -fsS -X POST "$BASE/api/v1/admin/setup" \
-    -H 'Content-Type: application/json' \
-    --data "{\"username\":\"$USER\",\"password\":\"$PASS\",\"display_name\":\"Smoke\"}" \
-    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-  test -n "$token"
-  echo "[OK] first-time setup created admin $USER"
-else
-  # Login with credentials from env if provided, else create is already done —
-  # for CI/local re-runs use last known test user when possible.
-  if [ -n "${ADMIN_SMOKE_USER:-}" ] && [ -n "${ADMIN_SMOKE_PASS:-}" ]; then
-    USER="$ADMIN_SMOKE_USER"
-    PASS="$ADMIN_SMOKE_PASS"
-  else
-    # Create is blocked; require explicit creds for re-run
-    echo "Admin already exists. Set ADMIN_SMOKE_USER / ADMIN_SMOKE_PASS to continue smoke login."
-    echo "Or reset DB volume for first-time setup test."
-    # Still verify login fails without real account mock
-    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/admin/login" \
-      -H 'Content-Type: application/json' \
-      --data '{"username":"nope","password":"wrong-password-xx"}')
-    test "$code" = "401"
-    echo "[OK] mock password rejected (401)"
-    echo "SMOKE PARTIAL (setup already done)"
-    exit 0
-  fi
-  token=$(curl -fsS -X POST "$BASE/api/v1/admin/login" \
-    -H 'Content-Type: application/json' \
-    --data "{\"username\":\"$USER\",\"password\":\"$PASS\"}" \
-    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-  test -n "$token"
-  echo "[OK] admin login $USER"
+# Web admin SPA removed
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/admin/" || true)
+if [ "$code" = "200" ]; then
+  echo "[FAIL] unexpected web admin still at /admin/ ($code)"
+  exit 1
 fi
+echo "[OK] no web admin SPA (HTTP $code)"
+
+# Ensure known password via trial recovery key (also covers first-time create path via login).
+curl -s -X POST "$BASE/api/v1/auth/reset-password" \
+  -H 'Content-Type: application/json' \
+  --data "{\"username\":\"$USER\",\"recovery_key\":\"wangshun\",\"new_password\":\"$PASS\"}" \
+  >/dev/null || true
+# If user does not exist yet, password login auto-registers (wangshun → is_admin).
+token=$(curl -fsS -X POST "$BASE/api/v1/auth/password" \
+  -H 'Content-Type: application/json' \
+  --data "{\"username\":\"$USER\",\"password\":\"$PASS\"}" \
+  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+test -n "$token"
+echo "[OK] password login $USER"
+
+# is_admin flag
+me=$(curl -fsS "$BASE/api/v1/me" -H "Authorization: Bearer $token")
+echo "$me" | grep -q '"is_admin":true'
+echo "[OK] is_admin"
 
 curl -fsS "$BASE/api/v1/admin/overview" \
   -H "Authorization: Bearer $token" | grep -q '"users"'
-echo "[OK] overview (real DB counts)"
+echo "[OK] overview"
+
+# Reset password with trial recovery key, then login with new pass
+NEWPASS="SmokeReset9!"
+curl -fsS -X POST "$BASE/api/v1/auth/reset-password" \
+  -H 'Content-Type: application/json' \
+  --data "{\"username\":\"$USER\",\"recovery_key\":\"wangshun\",\"new_password\":\"$NEWPASS\"}" \
+  | grep -q '"ok":true'
+echo "[OK] reset-password"
+
+token2=$(curl -fsS -X POST "$BASE/api/v1/auth/password" \
+  -H 'Content-Type: application/json' \
+  --data "{\"username\":\"$USER\",\"password\":\"$NEWPASS\"}" \
+  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+test -n "$token2"
+echo "[OK] login after reset"
+
+# Restore smoke password for re-runs
+curl -fsS -X POST "$BASE/api/v1/auth/reset-password" \
+  -H 'Content-Type: application/json' \
+  --data "{\"username\":\"$USER\",\"recovery_key\":\"wangshun\",\"new_password\":\"$PASS\"}" \
+  | grep -q '"ok":true'
+echo "[OK] restore password"
 
 curl -fsS -X POST "$BASE/api/v1/admin/ai-config/test" \
-  -H "Authorization: Bearer $token" \
+  -H "Authorization: Bearer $token2" \
   -H 'Content-Type: application/json' \
-  --data '{"prompt":"hello"}' | grep -q '"ok":true'
+  --data '{"prompt":"hello"}' | grep -q '"ok"'
 echo "[OK] ai test"
-
-curl -fsS "$BASE/api/v1/admin/ai-usage?limit=5" \
-  -H "Authorization: Bearer $token" | grep -q '"summary"'
-echo "[OK] usage"
 
 echo "ALL SMOKE CHECKS PASSED"

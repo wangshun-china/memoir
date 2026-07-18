@@ -9,17 +9,13 @@ pub mod memoirs;
 pub mod settings;
 pub mod state;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::http::{header, HeaderValue, Method};
+use axum::http::Method;
 use axum::routing::get;
 use axum::{Json, Router};
 use tokio::sync::RwLock;
-use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
-use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
@@ -39,18 +35,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(interviews::router())
         .merge(admin::router());
 
-    let static_dir = PathBuf::from(&state.config.admin_static_dir);
-    let index = static_dir.join("index.html");
-    // Admin SPA must not be cached — otherwise browsers keep the old login-only page.
-    let admin_svc = ServiceBuilder::new()
-        .layer(SetResponseHeaderLayer::overriding(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
-        ))
-        .service(ServeDir::new(static_dir).not_found_service(ServeFile::new(index)));
-
-    // WeChat miniprogram does not use browser CORS. Keep methods/headers open for admin tools;
-    // origins stay permissive for Stage-1 HTTP admin debugging (tighten when TLS + fixed admin host).
+    // Admin UI lives in the miniprogram only (no web SPA).
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([
@@ -66,7 +51,6 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1", api)
-        .nest_service("/admin", admin_svc)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)

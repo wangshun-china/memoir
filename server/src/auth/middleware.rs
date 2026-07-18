@@ -14,6 +14,8 @@ pub struct AuthUser {
 #[derive(Debug, Clone)]
 pub struct AdminAuth {
     pub subject: String,
+    /// true when authorized via users.is_admin (miniprogram admin).
+    pub via_user_admin: bool,
 }
 
 impl FromRequestParts<AppState> for AuthUser {
@@ -45,12 +47,29 @@ impl FromRequestParts<AppState> for AdminAuth {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let claims = extract_claims(parts, state)?;
-        if claims.role != "admin" {
-            return Err(AppError::Forbidden("需要管理员权限".into()));
+        if claims.role == "admin" {
+            return Ok(AdminAuth {
+                subject: claims.sub,
+                via_user_admin: false,
+            });
         }
-        Ok(AdminAuth {
-            subject: claims.sub,
-        })
+        if claims.role == "user" {
+            let user_id = Uuid::parse_str(&claims.sub)
+                .map_err(|_| AppError::Forbidden("需要管理员权限".into()))?;
+            let is_admin: Option<bool> =
+                sqlx::query_scalar("SELECT is_admin FROM users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .map_err(AppError::from)?;
+            if is_admin == Some(true) {
+                return Ok(AdminAuth {
+                    subject: claims.sub,
+                    via_user_admin: true,
+                });
+            }
+        }
+        Err(AppError::Forbidden("需要管理员权限".into()))
     }
 }
 

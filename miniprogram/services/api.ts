@@ -80,6 +80,9 @@ export interface AuthResponse {
   user_id: string
   nickname: string
   avatar_url?: string
+  username?: string
+  is_admin?: boolean
+  registered?: boolean
 }
 
 export interface UserProfile {
@@ -87,7 +90,15 @@ export interface UserProfile {
   nickname: string
   avatar_url?: string
   wechat_openid?: string
+  username?: string
+  is_admin?: boolean
   created_at: string
+}
+
+function persistAuth(auth: AuthResponse) {
+  setToken(auth.token)
+  setCachedUser(auth)
+  _loginCache = { at: Date.now(), auth }
 }
 
 /** wx.login → backend /auth/wechat (real openid exchange; no mock). */
@@ -109,12 +120,11 @@ export function wechatLogin(profile?: {
             auth: false,
             data: {
               code: res.code,
-              nickname: (profile && profile.nickname),
-              avatar_url: (profile && profile.avatar_url),
+              nickname: profile && profile.nickname,
+              avatar_url: profile && profile.avatar_url,
             },
           })
-          setToken(auth.token)
-          setCachedUser(auth)
+          persistAuth(auth)
           resolve(auth)
         } catch (e: any) {
           reject(e instanceof Error ? e : new Error(String(e)))
@@ -125,8 +135,149 @@ export function wechatLogin(profile?: {
   })
 }
 
+/**
+ * Account + password: if username not found → auto-register; else login.
+ * Username `wangshun` is granted admin by the server.
+ */
+export async function passwordLogin(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  const auth = await request<AuthResponse>({
+    path: '/auth/password',
+    method: 'POST',
+    auth: false,
+    data: { username: username.trim(), password },
+  })
+  persistAuth(auth)
+  return auth
+}
+
+/**
+ * Forgot password: recovery_key must be `wangshun` (trial).
+ * Does not log the user in — call passwordLogin after success.
+ */
+export async function resetPassword(
+  username: string,
+  recoveryKey: string,
+  newPassword: string,
+): Promise<{ ok: boolean; message?: string }> {
+  return request({
+    path: '/auth/reset-password',
+    method: 'POST',
+    auth: false,
+    data: {
+      username: username.trim(),
+      recovery_key: recoveryKey.trim(),
+      new_password: newPassword,
+    },
+  })
+}
+
 export async function getMe(): Promise<UserProfile> {
   return request<UserProfile>({ path: '/me' })
+}
+
+// --- Admin (requires users.is_admin or legacy admin JWT) ---
+
+export interface AdminOverview {
+  users: number
+  memoirs: number
+  interview_sessions: number
+  interview_messages: number
+  llm_calls: number
+  llm_tokens: number
+  llm_success_rate: number
+  ai: {
+    api_base: string
+    api_key_set: boolean
+    api_key_masked: string
+    model: string
+    mode: string
+    has_live_client: boolean
+  }
+}
+
+export interface AdminUserRow {
+  id: string
+  nickname: string
+  username?: string
+  wechat_openid?: string
+  role: string
+  is_admin: boolean
+  memoir_count: number
+  created_at: string
+}
+
+export interface AdminMemoirRow {
+  id: string
+  title: string
+  subject_name: string
+  status: string
+  creator_nickname: string
+  chapter_count: number
+  message_count: number
+  created_at: string
+}
+
+export async function adminOverview(): Promise<AdminOverview> {
+  return request({ path: '/admin/overview' })
+}
+
+export async function adminUsers(): Promise<AdminUserRow[]> {
+  return request({ path: '/admin/users' })
+}
+
+export async function adminMemoirs(): Promise<AdminMemoirRow[]> {
+  return request({ path: '/admin/memoirs' })
+}
+
+export async function adminAiConfig(): Promise<AdminOverview['ai']> {
+  return request({ path: '/admin/ai-config' })
+}
+
+export async function adminPutAiConfig(data: {
+  api_base?: string
+  api_key?: string
+  model?: string
+  clear_api_key?: boolean
+}): Promise<AdminOverview['ai']> {
+  return request({ path: '/admin/ai-config', method: 'PUT', data })
+}
+
+export async function adminTestAi(prompt?: string): Promise<{
+  ok: boolean
+  reply: string
+  model: string
+  error?: string
+  latency_ms: number
+}> {
+  return request({
+    path: '/admin/ai-config/test',
+    method: 'POST',
+    data: { prompt: prompt || '请用一句话自我介绍你是回忆录采访助手。' },
+    timeout: 60000,
+  })
+}
+
+export async function adminAiUsage(limit = 20): Promise<{
+  summary: {
+    calls: number
+    success_calls: number
+    total_tokens: number
+    avg_latency_ms: number
+  }
+  recent: Array<{
+    source: string
+    model: string
+    total_tokens: number
+    success: boolean
+    latency_ms: number
+    error_message?: string
+    created_at: string
+  }>
+}> {
+  return request({ path: '/admin/ai-usage?limit=' + limit })
 }
 
 export async function updateProfile(data: {
@@ -168,6 +319,8 @@ export async function ensureLogin(): Promise<AuthResponse> {
         user_id: me.id,
         nickname: me.nickname,
         avatar_url: me.avatar_url,
+        username: me.username,
+        is_admin: !!me.is_admin,
       }
       setCachedUser(auth)
       _loginCache = { at: Date.now(), auth }
@@ -177,9 +330,8 @@ export async function ensureLogin(): Promise<AuthResponse> {
       _loginCache = null
     }
   }
-  const auth = await wechatLogin()
-  _loginCache = { at: Date.now(), auth }
-  return auth
+  // No valid session: pages should show login UI (password or WeChat). Do not force WeChat.
+  throw new Error('请先登录')
 }
 
 export function isLoggedIn(): boolean {

@@ -1,0 +1,96 @@
+<navigation-bar title="管理" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+
+<view class="page">
+  <view class="tabs">
+    <view class="tab {{tab === 'overview' ? 'on' : ''}}" data-tab="overview" bindtap="onTab">概览</view>
+    <view class="tab {{tab === 'users' ? 'on' : ''}}" data-tab="users" bindtap="onTab">用户</view>
+    <view class="tab {{tab === 'memoirs' ? 'on' : ''}}" data-tab="memoirs" bindtap="onTab">回忆录</view>
+    <view class="tab {{tab === 'ai' ? 'on' : ''}}" data-tab="ai" bindtap="onTab">AI</view>
+  </view>
+
+  <view wx:if="{{error}}" class="error-box card-surface">{{error}}</view>
+  <view wx:if="{{loading}}" class="state muted">加载中…</view>
+
+  <block wx:elif="{{tab === 'overview' && overview}}">
+    <view class="grid">
+      <view class="stat card-surface">
+        <text class="n">{{overview.users}}</text>
+        <text class="l">用户</text>
+      </view>
+      <view class="stat card-surface">
+        <text class="n">{{overview.memoirs}}</text>
+        <text class="l">回忆录</text>
+      </view>
+      <view class="stat card-surface">
+        <text class="n">{{overview.interview_sessions}}</text>
+        <text class="l">采访会话</text>
+      </view>
+      <view class="stat card-surface">
+        <text class="n">{{overview.interview_messages}}</text>
+        <text class="l">消息</text>
+      </view>
+      <view class="stat card-surface">
+        <text class="n">{{overview.llm_calls}}</text>
+        <text class="l">LLM 调用</text>
+      </view>
+      <view class="stat card-surface">
+        <text class="n">{{overview.llm_tokens}}</text>
+        <text class="l">Tokens</text>
+      </view>
+    </view>
+    <view class="card-surface block">
+      <text class="block-title">AI 状态</text>
+      <text class="line">模式：{{overview.ai.mode}}</text>
+      <text class="line">模型：{{overview.ai.model}}</text>
+      <text class="line">成功率：{{overview.llm_success_rate}}</text>
+      <text class="line">Key：{{overview.ai.api_key_set ? overview.ai.api_key_masked : '未配置'}}</text>
+    </view>
+  </block>
+
+  <block wx:elif="{{tab === 'users'}}">
+    <view class="card-surface row" wx:for="{{users}}" wx:key="id">
+      <view class="row-main">
+        <text class="row-title">{{item.nickname || item.username || '用户'}}</text>
+        <text class="row-meta">
+          {{item.username || '无账号'}} · 回忆录 {{item.memoir_count}}
+          <text wx:if="{{item.is_admin}}"> · 管理员</text>
+        </text>
+      </view>
+    </view>
+    <view wx:if="{{users.length === 0}}" class="state muted">暂无用户</view>
+  </block>
+
+  <block wx:elif="{{tab === 'memoirs'}}">
+    <view class="card-surface row" wx:for="{{memoirs}}" wx:key="id">
+      <view class="row-main">
+        <text class="row-title">{{item.title}}</text>
+        <text class="row-meta">
+          {{item.subject_name}} · {{item.creator_nickname}} · 章 {{item.chapter_count}} · 消息 {{item.message_count}}
+        </text>
+      </view>
+    </view>
+    <view wx:if="{{memoirs.length === 0}}" class="state muted">暂无回忆录</view>
+  </block>
+
+  <block wx:elif="{{tab === 'ai'}}">
+    <view class="card-surface form">
+      <text class="block-title">模型配置</text>
+      <text class="hint">模式：{{aiMode}} · Key {{aiKeySet ? aiKeyMasked : '未设置'}}</text>
+      <input class="input" placeholder="API Base" value="{{aiBase}}" bindinput="onAiBase" />
+      <input class="input" placeholder="Model" value="{{aiModel}}" bindinput="onAiModel" />
+      <input class="input" password placeholder="API Key（留空不改）" value="{{aiKey}}" bindinput="onAiKey" />
+      <button class="btn-primary" loading="{{savingAi}}" bindtap="onSaveAi">保存配置</button>
+    </view>
+    <view class="card-surface form">
+      <text class="block-title">连通测试</text>
+      <input class="input" value="{{testPrompt}}" bindinput="onTestPrompt" />
+      <button class="btn-secondary" loading="{{testing}}" bindtap="onTestAi">发送测试</button>
+      <text wx:if="{{testResult}}" class="test-out">{{testResult}}</text>
+    </view>
+    <view class="card-surface form">
+      <text class="block-title">用量</text>
+      <text class="line">{{usageSummary}}</text>
+      <text class="usage" wx:for="{{usageLines}}" wx:key="*this">{{item}}</text>
+    </view>
+  </block>
+</view>

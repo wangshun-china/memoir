@@ -3,6 +3,8 @@ import {
   isLoggedIn,
   listMemoirs,
   logout,
+  passwordLogin,
+  resetPassword,
   updateProfile,
   wechatLogin,
 } from '../../services/api'
@@ -11,12 +13,20 @@ Page({
   data: {
     loggedIn: false,
     loggingIn: false,
+    accountLoggingIn: false,
+    accountUser: '',
+    accountPass: '',
+    showForgot: false,
+    recoveryKey: '',
+    newPass: '',
+    resetting: false,
     nickname: '',
     nickInitial: '我',
     avatarUrl: '',
+    username: '',
+    isAdmin: false,
     memoirCount: 0,
     editingNick: false,
-    // 仅在进入编辑态时赋一次，输入过程中禁止 setData 改它
     nickSeed: '',
     error: '',
   },
@@ -35,6 +45,8 @@ Page({
       this.setData({
         nickname: '',
         avatarUrl: '',
+        username: '',
+        isAdmin: false,
         memoirCount: 0,
       })
       return
@@ -42,16 +54,98 @@ Page({
     try {
       const me = await getMe()
       const memoirs = await listMemoirs()
-      const nickname = me.nickname || '微信用户'
+      const nickname = me.nickname || me.username || '用户'
       this._nickDraft = nickname
       this.setData({
         nickname,
         nickInitial: nickname.charAt(0) || '我',
         avatarUrl: me.avatar_url || '',
+        username: me.username || '',
+        isAdmin: !!me.is_admin,
         memoirCount: memoirs.length,
       })
     } catch (e: any) {
       this.setData({ error: (e && e.message) || '加载失败' })
+    }
+  },
+
+  onAccountUser(e: WechatMiniprogram.Input) {
+    this.setData({ accountUser: e.detail.value || '' })
+  },
+
+  onAccountPass(e: WechatMiniprogram.Input) {
+    this.setData({ accountPass: e.detail.value || '' })
+  },
+
+  onRecoveryKey(e: WechatMiniprogram.Input) {
+    this.setData({ recoveryKey: e.detail.value || '' })
+  },
+
+  onNewPass(e: WechatMiniprogram.Input) {
+    this.setData({ newPass: e.detail.value || '' })
+  },
+
+  onToggleForgot() {
+    this.setData({
+      showForgot: !this.data.showForgot,
+      error: '',
+      recoveryKey: '',
+      newPass: '',
+    })
+  },
+
+  async onResetPassword() {
+    const username = (this.data.accountUser || '').trim()
+    const recoveryKey = this.data.recoveryKey || ''
+    const newPass = this.data.newPass || ''
+    if (!username || !recoveryKey || !newPass) {
+      this.setData({ error: '请填写账号、恢复密钥和新密码' })
+      return
+    }
+    this.setData({ resetting: true, error: '' })
+    try {
+      await resetPassword(username, recoveryKey, newPass)
+      this.setData({
+        resetting: false,
+        showForgot: false,
+        accountPass: newPass,
+        recoveryKey: '',
+        newPass: '',
+      })
+      wx.showToast({ title: '密码已重置', icon: 'success' })
+    } catch (e: any) {
+      this.setData({
+        resetting: false,
+        error: (e && e.message) || '重置失败',
+      })
+    }
+  },
+
+  async onAccountLogin() {
+    const username = (this.data.accountUser || '').trim()
+    const password = this.data.accountPass || ''
+    if (!username || !password) {
+      this.setData({ error: '请填写账号和密码' })
+      return
+    }
+    this.setData({ accountLoggingIn: true, error: '' })
+    try {
+      const auth = await passwordLogin(username, password)
+      this.setData({
+        accountLoggingIn: false,
+        loggedIn: true,
+        accountPass: '',
+        isAdmin: !!auth.is_admin,
+      })
+      if (auth.registered) {
+        wx.showToast({ title: '已自动注册', icon: 'success' })
+      }
+      await this.refresh()
+    } catch (e: any) {
+      this.setData({
+        accountLoggingIn: false,
+        error: (e && e.message) || '登录失败',
+      })
     }
   },
 
@@ -66,10 +160,14 @@ Page({
     }
   },
 
+  onAdmin() {
+    wx.navigateTo({ url: '/pages/admin/admin' })
+  },
+
   onLogout() {
     wx.showModal({
       title: '退出登录',
-      content: '确定退出当前微信账号？',
+      content: '确定退出当前账号？',
       success: (res) => {
         if (res.confirm) {
           logout()
@@ -77,6 +175,8 @@ Page({
             loggedIn: false,
             nickname: '',
             avatarUrl: '',
+            username: '',
+            isAdmin: false,
             memoirCount: 0,
             editingNick: false,
           })

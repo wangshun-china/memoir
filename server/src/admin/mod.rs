@@ -1,4 +1,4 @@
 mod handlers;
-mod password;
+pub mod password;
 
 pub use handlers::router;

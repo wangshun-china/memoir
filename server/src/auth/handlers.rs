@@ -7,8 +7,12 @@ use uuid::Uuid;
 
 use super::jwt::issue_token;
 use super::AuthUser;
+use crate::admin::password::{hash_password, validate_password, validate_username, verify_password};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+
+/// Trial / stage: this username always gets is_admin = true.
+const ADMIN_USERNAME: &str = "wangshun";
 
 #[derive(Debug, Deserialize)]
 pub struct DevLoginRequest {
@@ -30,6 +34,11 @@ pub struct AuthResponse {
     pub user_id: Uuid,
     pub nickname: String,
     pub avatar_url: Option<String>,
+    pub username: Option<String>,
+    pub is_admin: bool,
+    /// true when this call created a new account (password login auto-register).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub registered: bool,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -38,7 +47,23 @@ pub struct UserProfile {
     pub nickname: String,
     pub avatar_url: Option<String>,
     pub wechat_openid: Option<String>,
+    pub username: Option<String>,
+    pub is_admin: bool,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordLoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub username: String,
+    /// Trial: must be `wangshun`.
+    pub recovery_key: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,9 +76,14 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/auth/dev-login", post(dev_login))
         .route("/auth/wechat", post(wechat_login))
+        .route("/auth/password", post(password_login))
+        .route("/auth/reset-password", post(reset_password))
         .route("/auth/refresh", post(refresh_stub))
         .route("/me", get(get_me).patch(update_profile))
 }
+
+/// Trial recovery key for forgot-password (miniprogram). Same string as reserved admin username.
+const RECOVERY_KEY: &str = "wangshun";
 
 /// Dev-only login. Disabled unless ALLOW_DEV_LOGIN=1 (CI / local API tests).
 /// Miniprogram must never call this — use WeChat code login.
@@ -81,8 +111,11 @@ async fn dev_login(
     Ok(Json(AuthResponse {
         token,
         user_id: user.id,
-        nickname: user.nickname,
-        avatar_url: user.avatar_url,
+        nickname: user.nickname.clone(),
+        avatar_url: user.avatar_url.clone(),
+        username: user.username,
+        is_admin: user.is_admin,
+        registered: false,
     }))
 }
 
@@ -128,21 +161,155 @@ async fn wechat_login(
     Ok(Json(AuthResponse {
         token,
         user_id: user.id,
+        nickname: user.nickname.clone(),
+        avatar_url: user.avatar_url.clone(),
+        username: user.username,
+        is_admin: user.is_admin,
+        registered: false,
+    }))
+}
+
+/// Password login: if username missing → auto register; if exists → verify password.
+/// Username `wangshun` (case-insensitive) is always granted is_admin.
+async fn password_login(
+    State(state): State<AppState>,
+    Json(body): Json<PasswordLoginRequest>,
+) -> AppResult<Json<AuthResponse>> {
+    let username = body.username.trim().to_string();
+    let password = body.password;
+    validate_username(&username)?;
+    validate_password(&password)?;
+
+    let is_admin_name = username.eq_ignore_ascii_case(ADMIN_USERNAME);
+
+    let existing = sqlx::query_as::<_, PasswordUserRow>(
+        r#"
+        SELECT id, nickname, avatar_url, username, password_hash, is_admin
+        FROM users
+        WHERE username = $1
+        "#,
+    )
+    .bind(&username)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let (user, registered) = if let Some(row) = existing {
+        let hash = row.password_hash.as_deref().unwrap_or("");
+        if hash.is_empty() || !verify_password(&password, hash)? {
+            return Err(AppError::Unauthorized("账号或密码错误".into()));
+        }
+        // Keep admin flag in sync for the reserved username.
+        let is_admin = if is_admin_name || row.is_admin {
+            if !row.is_admin {
+                sqlx::query("UPDATE users SET is_admin = TRUE, updated_at = NOW() WHERE id = $1")
+                    .bind(row.id)
+                    .execute(&state.pool)
+                    .await?;
+            }
+            true
+        } else {
+            row.is_admin
+        };
+        (
+            UserRow {
+                id: row.id,
+                nickname: row.nickname,
+                avatar_url: row.avatar_url,
+                username: row.username,
+                is_admin,
+            },
+            false,
+        )
+    } else {
+        let hash = hash_password(&password)?;
+        let nickname = username.clone();
+        let row = sqlx::query_as::<_, UserRow>(
+            r#"
+            INSERT INTO users (username, password_hash, nickname, is_admin)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, nickname, avatar_url, username, is_admin
+            "#,
+        )
+        .bind(&username)
+        .bind(&hash)
+        .bind(&nickname)
+        .bind(is_admin_name)
+        .fetch_one(&state.pool)
+        .await?;
+        (row, true)
+    };
+
+    let token = issue_token(&user.id.to_string(), "user", &state.config.jwt_secret, 72)?;
+    Ok(Json(AuthResponse {
+        token,
+        user_id: user.id,
         nickname: user.nickname,
         avatar_url: user.avatar_url,
+        username: user.username,
+        is_admin: user.is_admin,
+        registered,
     }))
+}
+
+/// Forgot password: prove recovery_key (`wangshun` for trial), set new password for username.
+async fn reset_password(
+    State(state): State<AppState>,
+    Json(body): Json<ResetPasswordRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let username = body.username.trim().to_string();
+    validate_username(&username)?;
+    validate_password(&body.new_password)?;
+
+    if body.recovery_key.trim() != RECOVERY_KEY {
+        return Err(AppError::Unauthorized("恢复密钥错误".into()));
+    }
+
+    let row = sqlx::query_as::<_, PasswordUserRow>(
+        r#"
+        SELECT id, nickname, avatar_url, username, password_hash, is_admin
+        FROM users
+        WHERE username = $1
+        "#,
+    )
+    .bind(&username)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("该账号不存在".into()))?;
+
+    if row.password_hash.is_none() {
+        return Err(AppError::BadRequest(
+            "该账号未设置密码（可能是微信登录账号）".into(),
+        ));
+    }
+
+    let new_hash = hash_password(&body.new_password)?;
+    sqlx::query(
+        r#"
+        UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2
+        "#,
+    )
+    .bind(&new_hash)
+    .bind(row.id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "username": username,
+        "message": "密码已重置，请使用新密码登录"
+    })))
 }
 
 async fn refresh_stub() -> AppResult<Json<serde_json::Value>> {
     Err(AppError::BadRequest(
-        "请重新调用 /auth/wechat 获取 token".into(),
+        "请重新调用 /auth/wechat 或 /auth/password 获取 token".into(),
     ))
 }
 
 async fn get_me(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<UserProfile>> {
     let row = sqlx::query_as::<_, UserProfile>(
         r#"
-        SELECT id, nickname, avatar_url, wechat_openid, created_at
+        SELECT id, nickname, avatar_url, wechat_openid, username, is_admin, created_at
         FROM users WHERE id = $1
         "#,
     )
@@ -180,7 +347,7 @@ async fn update_profile(
           avatar_url = COALESCE($3, avatar_url),
           updated_at = NOW()
         WHERE id = $1
-        RETURNING id, nickname, avatar_url, wechat_openid, created_at
+        RETURNING id, nickname, avatar_url, wechat_openid, username, is_admin, created_at
         "#,
     )
     .bind(user.user_id)
@@ -196,6 +363,18 @@ struct UserRow {
     id: Uuid,
     nickname: String,
     avatar_url: Option<String>,
+    username: Option<String>,
+    is_admin: bool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PasswordUserRow {
+    id: Uuid,
+    nickname: String,
+    avatar_url: Option<String>,
+    username: Option<String>,
+    password_hash: Option<String>,
+    is_admin: bool,
 }
 
 async fn upsert_user(
@@ -216,7 +395,7 @@ async fn upsert_user(
               END,
               avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
               updated_at = NOW()
-        RETURNING id, nickname, avatar_url
+        RETURNING id, nickname, avatar_url, username, is_admin
         "#,
     )
     .bind(openid)

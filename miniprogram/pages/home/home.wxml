@@ -19,8 +19,69 @@
   <view wx:if="{{!loggedIn}}" class="login-card card-surface">
     <view class="login-icon">📖</view>
     <text class="login-title">登录后开始整理回忆</text>
-    <text class="login-desc">使用微信登录，内容只保存在您的账号下，家人可代为操作。</text>
-    <button class="btn-primary login-btn" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
+    <text class="login-desc">可用账号密码（未注册将自动注册），或微信一键登录。</text>
+
+    <view class="login-form" wx:if="{{!showForgot}}">
+      <input
+        class="login-input"
+        placeholder="账号（3—32 位字母数字）"
+        maxlength="32"
+        value="{{accountUser}}"
+        bindinput="onAccountUser"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="密码（至少 8 位）"
+        maxlength="64"
+        value="{{accountPass}}"
+        bindinput="onAccountPass"
+      />
+      <button
+        class="btn-primary login-btn"
+        loading="{{accountLoggingIn}}"
+        bindtap="onAccountLogin"
+      >账号登录 / 注册</button>
+      <text class="login-link" bindtap="onToggleForgot">忘记密码？</text>
+      <text class="login-hint">没有账号会自动注册；账号 wangshun 为管理员（体验版）</text>
+    </view>
+
+    <view class="login-form" wx:else>
+      <text class="login-title-sm">重置密码</text>
+      <input
+        class="login-input"
+        placeholder="账号"
+        maxlength="32"
+        value="{{accountUser}}"
+        bindinput="onAccountUser"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="恢复密钥"
+        maxlength="64"
+        value="{{recoveryKey}}"
+        bindinput="onRecoveryKey"
+      />
+      <input
+        class="login-input"
+        password
+        placeholder="新密码（至少 8 位）"
+        maxlength="64"
+        value="{{newPass}}"
+        bindinput="onNewPass"
+      />
+      <button
+        class="btn-primary login-btn"
+        loading="{{resetting}}"
+        bindtap="onResetPassword"
+      >确认重置</button>
+      <text class="login-link" bindtap="onToggleForgot">返回登录</text>
+      <text class="login-hint">体验版恢复密钥为 wangshun</text>
+    </view>
+
+    <view class="login-divider"><text class="login-divider-text">或</text></view>
+    <button class="btn-secondary login-btn" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
     <view wx:if="{{error}}" class="error">{{error}}</view>
   </view>
 

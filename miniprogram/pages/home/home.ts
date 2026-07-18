@@ -4,6 +4,8 @@ import {
   isLoggedIn,
   listMemoirs,
   Memoir,
+  passwordLogin,
+  resetPassword,
   wechatLogin,
 } from '../../services/api'
 
@@ -19,6 +21,13 @@ Page({
     error: '',
     loggedIn: false,
     loggingIn: false,
+    accountLoggingIn: false,
+    accountUser: '',
+    accountPass: '',
+    showForgot: false,
+    recoveryKey: '',
+    newPass: '',
+    resetting: false,
   },
 
   onShow() {
@@ -41,6 +50,87 @@ Page({
         loading: false,
         error: (e && e.message) || '加载失败',
         loggedIn: isLoggedIn(),
+      })
+    }
+  },
+
+  onAccountUser(e: WechatMiniprogram.Input) {
+    this.setData({ accountUser: e.detail.value || '' })
+  },
+
+  onAccountPass(e: WechatMiniprogram.Input) {
+    this.setData({ accountPass: e.detail.value || '' })
+  },
+
+  onRecoveryKey(e: WechatMiniprogram.Input) {
+    this.setData({ recoveryKey: e.detail.value || '' })
+  },
+
+  onNewPass(e: WechatMiniprogram.Input) {
+    this.setData({ newPass: e.detail.value || '' })
+  },
+
+  onToggleForgot() {
+    this.setData({
+      showForgot: !this.data.showForgot,
+      error: '',
+      recoveryKey: '',
+      newPass: '',
+    })
+  },
+
+  async onResetPassword() {
+    const username = (this.data.accountUser || '').trim()
+    const recoveryKey = this.data.recoveryKey || ''
+    const newPass = this.data.newPass || ''
+    if (!username || !recoveryKey || !newPass) {
+      this.setData({ error: '请填写账号、恢复密钥和新密码' })
+      return
+    }
+    this.setData({ resetting: true, error: '' })
+    try {
+      await resetPassword(username, recoveryKey, newPass)
+      this.setData({
+        resetting: false,
+        showForgot: false,
+        accountPass: newPass,
+        recoveryKey: '',
+        newPass: '',
+      })
+      wx.showToast({ title: '密码已重置', icon: 'success' })
+    } catch (e: any) {
+      this.setData({
+        resetting: false,
+        error: (e && e.message) || '重置失败',
+      })
+    }
+  },
+
+  async onAccountLogin() {
+    const username = (this.data.accountUser || '').trim()
+    const password = this.data.accountPass || ''
+    if (!username || !password) {
+      this.setData({ error: '请填写账号和密码' })
+      return
+    }
+    this.setData({ accountLoggingIn: true, error: '' })
+    try {
+      const auth = await passwordLogin(username, password)
+      this.setData({
+        loggedIn: true,
+        accountLoggingIn: false,
+        accountPass: '',
+      })
+      if (auth.registered) {
+        wx.showToast({ title: '已自动注册', icon: 'success' })
+      } else if (auth.is_admin) {
+        wx.showToast({ title: '管理员已登录', icon: 'none' })
+      }
+      await this.load()
+    } catch (e: any) {
+      this.setData({
+        accountLoggingIn: false,
+        error: (e && e.message) || '登录失败',
       })
     }
   },
