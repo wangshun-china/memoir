@@ -258,6 +258,7 @@ pub async fn list_chapters(
     pool: &PgPool,
     user_id: Uuid,
     memoir_id: Uuid,
+    include_content: bool,
 ) -> AppResult<Vec<ChapterProgress>> {
     // ownership check
     let _ = get_memoir(pool, user_id, memoir_id).await?;
@@ -270,7 +271,7 @@ pub async fn list_chapters(
           c.sort_order,
           c.status,
           c.summary,
-          c.content,
+          CASE WHEN $2 THEN c.content ELSE NULL END AS content,
           c.created_at,
           c.updated_at,
           COALESCE((
@@ -314,6 +315,7 @@ pub async fn list_chapters(
         "#,
     )
     .bind(memoir_id)
+    .bind(include_content)
     .fetch_all(pool)
     .await?;
     Ok(rows)

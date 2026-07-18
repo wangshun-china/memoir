@@ -10,7 +10,6 @@ import {
   startInterview,
 } from '../../services/api'
 
-// Pure clear helper (also unit-tested via require of the .js file).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { afterSuccessfulSend } = require('../../utils/composer_clear') as {
   afterSuccessfulSend: (s: {
@@ -25,9 +24,9 @@ Page({
     memoirId: '',
     sessionId: '',
     topic: '童年与家庭',
+    chapterId: '',
     messages: [] as InterviewMessage[],
     composerKey: 0,
-    /** false briefly after send to destroy native textarea, then remount empty */
     composerAlive: true,
     sending: false,
     generating: false,
@@ -36,25 +35,30 @@ Page({
     userTurnCount: 0,
     autoGenerateAt: 20,
     saveHint: '对话将实时保存',
+    waitHint: '',
     generatedPreview: false,
+    generationStatus: '',
     error: '',
     scrollInto: '',
   },
 
   _draft: '',
   _lastGenerated: null as GeneratedChapter | null,
+  _tempId: 0,
 
   async onLoad(query: Record<string, string | undefined>) {
     const memoirId = query.memoirId || ''
     const mode = (query.mode || 'continue') as 'start' | 'continue'
     const sessionId = query.sessionId || ''
+    const chapterId = query.chapterId || ''
     const topic = decodeURIComponent(query.topic || '童年与家庭')
-    this.setData({ memoirId, topic })
+    this.setData({ memoirId, topic, chapterId })
     if (!memoirId) {
       this.setData({ error: '缺少回忆录 ID' })
       return
     }
     try {
+      wx.showLoading({ title: '加载中…', mask: true })
       await ensureLogin()
       if (mode === 'continue' && sessionId) {
         const continued = await continueInterview(sessionId)
@@ -64,12 +68,19 @@ Page({
         return
       }
       if (mode === 'start') {
-        const started = await startInterview(memoirId, topic, { forceNew: true })
+        const started = await startInterview(memoirId, topic, {
+          forceNew: true,
+          chapterId: chapterId || undefined,
+        })
         this.applySession(started, false)
         await this.reloadMessages()
         return
       }
-      const resumed = await startInterview(memoirId, topic, { forceNew: false })
+      // Fallback continue without sessionId — backend resumes by memoir+topic
+      const resumed = await startInterview(memoirId, topic, {
+        forceNew: false,
+        chapterId: chapterId || undefined,
+      })
       this.applySession(resumed, !!resumed.resumed)
       await this.reloadMessages()
       if (resumed.resumed) {
@@ -77,12 +88,14 @@ Page({
       }
     } catch (e: any) {
       this.setData({ error: e?.message || '无法打开采访' })
+    } finally {
+      wx.hideLoading()
     }
   },
 
   applySession(
     started: {
-      session: { id: string; status: string }
+      session: { id: string; status: string; generation_status?: string }
       resumed?: boolean
       user_turn_count?: number
       auto_generate_at?: number
@@ -95,6 +108,7 @@ Page({
       userTurnCount: started.user_turn_count || 0,
       autoGenerateAt: started.auto_generate_at || 20,
       finished: started.session.status === 'finished',
+      generationStatus: started.session.generation_status || '',
       saveHint: resumed ? '已恢复历史对话' : '对话已写入数据库',
     })
   },
@@ -113,14 +127,21 @@ Page({
     })
   },
 
+  appendMessages(extra: InterviewMessage[]) {
+    const messages = this.data.messages.concat(extra)
+    const last = messages[messages.length - 1]
+    const userTurnCount = messages.filter((m) => m.role === 'user').length
+    this.setData({
+      messages,
+      userTurnCount,
+      scrollInto: last ? `m-${last.id}` : '',
+    })
+  },
+
   onDraft(e: WechatMiniprogram.Input) {
     this._draft = e.detail.value || ''
   },
 
-  /**
-   * Empty draft + destroy/remount native textarea so prior text cannot linger.
-   * Only call after a successful send.
-   */
   clearComposerAfterSuccess() {
     const next = afterSuccessfulSend({
       draft: this._draft,
@@ -128,12 +149,10 @@ Page({
       success: true,
     })
     this._draft = next.draft
-    // Step 1: unmount so the native control cannot keep old composition text.
     this.setData({
       composerAlive: false,
       composerKey: next.composerKey,
     })
-    // Step 2: remount empty input on next tick.
     setTimeout(() => {
       this.setData({ composerAlive: true })
     }, 16)
@@ -164,33 +183,86 @@ Page({
     await this.sendWithAction('', action)
   },
 
-  /** @returns true when the message was accepted by the server */
   async sendWithAction(
     content: string,
     action: 'normal' | 'dont_know' | 'change_question' | 'prefer_not' | 'end',
   ): Promise<boolean> {
-    if (!this.data.sessionId || this.data.finished) return false
-    this.setData({ sending: true, error: '', saveHint: '正在保存…' })
+    if (!this.data.sessionId || this.data.finished || this.data.sending) return false
+
+    // Optimistic user bubble for normal text
+    let optimisticId = ''
+    if (action === 'normal' && content) {
+      this._tempId += 1
+      optimisticId = `tmp-${this._tempId}`
+      const optimistic: InterviewMessage = {
+        id: optimisticId,
+        session_id: this.data.sessionId,
+        role: 'user',
+        content,
+      }
+      this.appendMessages([optimistic])
+    }
+
+    this.setData({
+      sending: true,
+      error: '',
+      saveHint: '正在保存…',
+      waitHint: '正在听你说，整理下一问…',
+    })
     try {
       const resp = await postMessage(this.data.sessionId, content, action)
       if (resp.session_status === 'finished') {
         this.setData({ finished: true })
       }
+
+      // Replace optimistic / append server messages without full refetch
+      let messages = this.data.messages.filter((m) => m.id !== optimisticId)
+      if (resp.user_message) {
+        const has = messages.some((m) => m.id === resp.user_message.id)
+        if (!has) messages = messages.concat([resp.user_message])
+      }
+      if (resp.assistant_message) {
+        const has = messages.some((m) => m.id === resp.assistant_message!.id)
+        if (!has) messages = messages.concat([resp.assistant_message])
+      }
+      const last = messages[messages.length - 1]
       this.setData({
+        messages,
         userTurnCount: resp.user_turn_count ?? this.data.userTurnCount,
         autoGenerateAt: resp.auto_generate_at || this.data.autoGenerateAt,
         saveHint: '已保存到数据库',
+        waitHint: '',
+        generationStatus: resp.generation_status || this.data.generationStatus,
+        scrollInto: last ? `m-${last.id}` : '',
       })
-      await this.reloadMessages()
+
+      if (resp.generation_started) {
+        this.setData({
+          generatedPreview: true,
+          saveHint: '章节正在后台生成…',
+          generationStatus: 'generating',
+        })
+        wx.showToast({ title: '已开始生成章节', icon: 'none' })
+      }
       if (resp.generated) {
         this.onGenerated(resp.generated)
       }
       return true
     } catch (e: any) {
-      this.setData({ error: e?.message || '发送失败', saveHint: '保存失败，请重试' })
+      // Drop optimistic bubble on failure
+      if (optimisticId) {
+        this.setData({
+          messages: this.data.messages.filter((m) => m.id !== optimisticId),
+        })
+      }
+      this.setData({
+        error: e?.message || '发送失败',
+        saveHint: '保存失败，请重试',
+        waitHint: '',
+      })
       return false
     } finally {
-      this.setData({ sending: false })
+      this.setData({ sending: false, waitHint: '' })
     }
   },
 
@@ -200,7 +272,12 @@ Page({
       this.setData({ error: '请先回答几个问题，再生成回忆录' })
       return
     }
-    this.setData({ generating: true, error: '' })
+    this.setData({
+      generating: true,
+      error: '',
+      waitHint: '正在把口述整理成章节…',
+    })
+    wx.showLoading({ title: '生成中…', mask: true })
     try {
       const generated = await generateChapter(this.data.sessionId)
       this.onGenerated(generated)
@@ -208,7 +285,8 @@ Page({
     } catch (e: any) {
       this.setData({ error: e?.message || '生成失败' })
     } finally {
-      this.setData({ generating: false })
+      wx.hideLoading()
+      this.setData({ generating: false, waitHint: '' })
     }
   },
 
@@ -216,9 +294,10 @@ Page({
     this._lastGenerated = generated
     this.setData({
       generatedPreview: true,
+      generationStatus: 'ready',
       saveHint:
         generated.trigger === 'auto'
-          ? `已满${generated.user_turn_count}轮，自动生成并保存`
+          ? `已满${generated.user_turn_count}轮，章节已生成`
           : '章节草稿已写入数据库',
     })
     if (generated.trigger === 'auto') {
@@ -248,8 +327,8 @@ Page({
   },
 
   async endSession() {
-    if (!this.data.sessionId) return
-    this.setData({ sending: true, error: '' })
+    if (!this.data.sessionId || this.data.sending) return
+    this.setData({ sending: true, error: '', waitHint: '正在结束…' })
     try {
       await postMessage(this.data.sessionId, '结束本次采访', 'end')
       await finishInterview(this.data.sessionId)
@@ -258,7 +337,7 @@ Page({
     } catch (e: any) {
       this.setData({ error: e?.message || '结束失败' })
     } finally {
-      this.setData({ sending: false })
+      this.setData({ sending: false, waitHint: '' })
     }
   },
 })

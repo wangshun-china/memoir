@@ -12,7 +12,7 @@ pub mod state;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::http::{header, HeaderValue};
+use axum::http::{header, HeaderValue, Method};
 use axum::routing::get;
 use axum::{Json, Router};
 use tokio::sync::RwLock;
@@ -27,6 +27,12 @@ use crate::settings::{load_runtime, seed_settings_from_env};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
+    if state.config.jwt_secret == "dev-only-change-me-jwt-secret" {
+        tracing::warn!(
+            "JWT_SECRET is the built-in dev default — set a strong secret before production"
+        );
+    }
+
     let api = Router::new()
         .merge(auth::router())
         .merge(memoirs::router())
@@ -43,16 +49,25 @@ pub fn build_router(state: AppState) -> Router {
         ))
         .service(ServeDir::new(static_dir).not_found_service(ServeFile::new(index)));
 
+    // WeChat miniprogram does not use browser CORS. Keep methods/headers open for admin tools;
+    // origins stay permissive for Stage-1 HTTP admin debugging (tighten when TLS + fixed admin host).
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers(Any);
+
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1", api)
         .nest_service("/admin", admin_svc)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

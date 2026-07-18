@@ -22,6 +22,8 @@ pub struct InterviewSession {
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
     pub auto_generated_at: Option<DateTime<Utc>>,
+    /// idle | generating | ready | failed
+    pub generation_status: String,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -38,7 +40,7 @@ pub struct InterviewMessage {
 pub struct CreateInterviewRequest {
     pub topic: Option<String>,
     pub chapter_id: Option<Uuid>,
-    /// When true (default), resume an active session for same memoir+topic if any.
+    /// When true, always create a new session (explicit「开始采访」). Default false = resume.
     pub force_new: Option<bool>,
 }
 
@@ -64,7 +66,11 @@ pub struct PostMessageResponse {
     pub session_status: String,
     pub user_turn_count: i64,
     pub auto_generate_at: i64,
+    /// Populated only when generation finished inline (rare); auto-gen is usually async.
     pub generated: Option<GeneratedChapter>,
+    /// True when auto chapter generation was scheduled in the background.
+    pub generation_started: bool,
+    pub generation_status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -343,6 +349,32 @@ pub async fn list_messages(
     Ok(rows)
 }
 
+/// Recent messages only (for interviewer context). Still ownership-checked.
+pub async fn list_messages_recent(
+    pool: &PgPool,
+    user_id: Uuid,
+    session_id: Uuid,
+    limit: i64,
+) -> AppResult<Vec<InterviewMessage>> {
+    let _ = get_session(pool, user_id, session_id).await?;
+    let rows = sqlx::query_as::<_, InterviewMessage>(
+        r#"
+        SELECT * FROM (
+          SELECT * FROM interview_messages
+          WHERE session_id = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT $2
+        ) t
+        ORDER BY created_at ASC, id ASC
+        "#,
+    )
+    .bind(session_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 pub async fn count_user_turns(pool: &PgPool, session_id: Uuid) -> AppResult<i64> {
     let n = sqlx::query_scalar::<_, i64>(
         r#"
@@ -385,6 +417,8 @@ pub async fn post_message(
             user_turn_count: turns,
             auto_generate_at: AUTO_GENERATE_USER_TURNS,
             generated: None,
+            generation_started: false,
+            generation_status: session.generation_status,
         });
     }
 
@@ -423,7 +457,8 @@ pub async fn post_message(
     )
     .await?;
 
-    let history = list_messages(&state.pool, user_id, session_id).await?;
+    // Recent window only — full history is still in DB for generate/list UI.
+    let history = list_messages_recent(&state.pool, user_id, session_id, 16).await?;
     let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
 
     // 2) Call interviewer skill without holding a DB connection.
@@ -509,17 +544,25 @@ pub async fn post_message(
 
     let turns = count_user_turns(&state.pool, session_id).await?;
 
-    // 4) Auto-generate chapter draft when threshold reached (once per session).
-    let mut generated = None;
+    // 4) Auto-generate in background when threshold reached (do not block chat reply).
+    let mut generation_started = false;
+    let mut generation_status = session.generation_status.clone();
     if turns >= AUTO_GENERATE_USER_TURNS {
-        let sess = get_session(&state.pool, user_id, session_id).await?;
-        if sess.auto_generated_at.is_none() {
-            match generate_from_session(state, user_id, session_id, "auto").await {
-                Ok(g) => generated = Some(g),
-                Err(e) => {
-                    tracing::warn!(error = %e, "auto chapter generation failed");
+        if claim_generation_slot(&state.pool, session_id, true).await? {
+            generation_started = true;
+            generation_status = "generating".into();
+            let state_bg = state.clone();
+            tokio::spawn(async move {
+                if let Err(e) =
+                    generate_from_session(&state_bg, user_id, session_id, "auto").await
+                {
+                    tracing::warn!(error = %e, %session_id, "async auto chapter generation failed");
+                    let _ = mark_generation_status(&state_bg.pool, session_id, "failed").await;
                 }
-            }
+            });
+        } else {
+            let sess = get_session(&state.pool, user_id, session_id).await?;
+            generation_status = sess.generation_status;
         }
     }
 
@@ -529,7 +572,9 @@ pub async fn post_message(
         session_status: "active".into(),
         user_turn_count: turns,
         auto_generate_at: AUTO_GENERATE_USER_TURNS,
-        generated,
+        generated: None,
+        generation_started,
+        generation_status,
     })
 }
 
@@ -553,6 +598,58 @@ pub async fn finish_session(
     Ok(session)
 }
 
+/// Claim generation slot. `auto_only_once`: also require `auto_generated_at IS NULL`.
+async fn claim_generation_slot(
+    pool: &PgPool,
+    session_id: Uuid,
+    auto_only_once: bool,
+) -> AppResult<bool> {
+    let row = if auto_only_once {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE interview_sessions
+            SET generation_status = 'generating'
+            WHERE id = $1
+              AND generation_status <> 'generating'
+              AND auto_generated_at IS NULL
+            RETURNING id
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE interview_sessions
+            SET generation_status = 'generating'
+            WHERE id = $1
+              AND generation_status <> 'generating'
+            RETURNING id
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await?
+    };
+    Ok(row.is_some())
+}
+
+async fn mark_generation_status(pool: &PgPool, session_id: Uuid, status: &str) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE interview_sessions
+        SET generation_status = $2
+        WHERE id = $1
+        "#,
+    )
+    .bind(session_id)
+    .bind(status)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Manually (or auto) generate chapter draft from this session's messages and persist to DB.
 pub async fn generate_from_session(
     state: &AppState,
@@ -561,11 +658,21 @@ pub async fn generate_from_session(
     trigger: &str,
 ) -> AppResult<GeneratedChapter> {
     let session = get_session(&state.pool, user_id, session_id).await?;
+
+    // Manual HTTP must claim. Async auto path already claimed before spawn.
+    if trigger != "auto" {
+        let claimed = claim_generation_slot(&state.pool, session_id, false).await?;
+        if !claimed {
+            return Err(AppError::Conflict("章节正在生成中，请稍候".into()));
+        }
+    }
+
     let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
     let history = list_messages(&state.pool, user_id, session_id).await?;
     let turns = count_user_turns(&state.pool, session_id).await?;
 
     if history.iter().filter(|m| m.role == "user").count() == 0 {
+        let _ = mark_generation_status(&state.pool, session_id, "idle").await;
         return Err(AppError::BadRequest(
             "还没有对话内容，请先回答几个问题再生成".into(),
         ));
@@ -619,7 +726,13 @@ pub async fn generate_from_session(
     };
 
     let summary: String = draft.chars().take(200).collect();
-    let chapter_id = resolve_chapter_id(&state.pool, &session).await?;
+    let chapter_id = match resolve_chapter_id(&state.pool, &session).await {
+        Ok(id) => id,
+        Err(e) => {
+            let _ = mark_generation_status(&state.pool, session_id, "failed").await;
+            return Err(e);
+        }
+    };
 
     let chapter = sqlx::query_as::<_, Chapter>(
         r#"
@@ -638,35 +751,26 @@ pub async fn generate_from_session(
     .fetch_one(&state.pool)
     .await?;
 
-    // Persist short summary on session; mark auto_generated when trigger is auto.
     let session_summary = Some(summary.clone());
-    if trigger == "auto" {
-        sqlx::query(
-            r#"
-            UPDATE interview_sessions
-            SET summary = $2, auto_generated_at = NOW(), chapter_id = COALESCE(chapter_id, $3)
-            WHERE id = $1
-            "#,
-        )
-        .bind(session_id)
-        .bind(&summary)
-        .bind(chapter_id)
-        .execute(&state.pool)
-        .await?;
-    } else {
-        sqlx::query(
-            r#"
-            UPDATE interview_sessions
-            SET summary = $2, chapter_id = COALESCE(chapter_id, $3)
-            WHERE id = $1
-            "#,
-        )
-        .bind(session_id)
-        .bind(&summary)
-        .bind(chapter_id)
-        .execute(&state.pool)
-        .await?;
-    }
+    sqlx::query(
+        r#"
+        UPDATE interview_sessions
+        SET summary = $2,
+            chapter_id = COALESCE(chapter_id, $3),
+            generation_status = 'ready',
+            auto_generated_at = CASE
+              WHEN $4 THEN COALESCE(auto_generated_at, NOW())
+              ELSE auto_generated_at
+            END
+        WHERE id = $1
+        "#,
+    )
+    .bind(session_id)
+    .bind(&summary)
+    .bind(chapter_id)
+    .bind(trigger == "auto")
+    .execute(&state.pool)
+    .await?;
 
     Ok(GeneratedChapter {
         chapter,

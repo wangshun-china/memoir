@@ -1,7 +1,8 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use super::service::{
@@ -57,11 +58,20 @@ async fn delete_memoir_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListChaptersQuery {
+    /// When true (default false for lean lists), include full chapter body.
+    #[serde(default)]
+    pub include_content: Option<bool>,
+}
+
 async fn list_chapters_handler(
     State(state): State<AppState>,
     user: AuthUser,
     Path(memoir_id): Path<Uuid>,
+    Query(q): Query<ListChaptersQuery>,
 ) -> AppResult<Json<Vec<ChapterProgress>>> {
-    let rows = list_chapters(&state.pool, user.user_id, memoir_id).await?;
+    let include = q.include_content.unwrap_or(false);
+    let rows = list_chapters(&state.pool, user.user_id, memoir_id, include).await?;
     Ok(Json(rows))
 }

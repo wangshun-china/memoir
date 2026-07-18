@@ -146,12 +146,20 @@ export async function updateProfile(data: {
   return me
 }
 
+const LOGIN_CACHE_MS = 10 * 60 * 1000
+let _loginCache: { at: number; auth: AuthResponse } | null = null
+
 /**
  * Ensure a valid session: reuse token if /me works, otherwise real WeChat login.
- * Does not invent fake openid or call /auth/dev-login.
+ * Caches successful validation for LOGIN_CACHE_MS to avoid /me on every page.
  */
 export async function ensureLogin(): Promise<AuthResponse> {
   const existing = getToken()
+  if (existing && _loginCache && _loginCache.auth.token === existing) {
+    if (Date.now() - _loginCache.at < LOGIN_CACHE_MS) {
+      return _loginCache.auth
+    }
+  }
   if (existing) {
     try {
       const me = await getMe()
@@ -162,12 +170,16 @@ export async function ensureLogin(): Promise<AuthResponse> {
         avatar_url: me.avatar_url,
       }
       setCachedUser(auth)
+      _loginCache = { at: Date.now(), auth }
       return auth
     } catch {
       clearToken()
+      _loginCache = null
     }
   }
-  return wechatLogin()
+  const auth = await wechatLogin()
+  _loginCache = { at: Date.now(), auth }
+  return auth
 }
 
 export function isLoggedIn(): boolean {
@@ -176,6 +188,7 @@ export function isLoggedIn(): boolean {
 
 export function logout() {
   clearToken()
+  _loginCache = null
 }
 
 export interface Memoir {
@@ -232,8 +245,14 @@ export function getMemoir(id: string) {
   return request<Memoir>({ path: `/memoirs/${id}` })
 }
 
-export function listChapters(memoirId: string) {
-  return request<Chapter[]>({ path: `/memoirs/${memoirId}/chapters` })
+export function listChapters(
+  memoirId: string,
+  options?: { includeContent?: boolean },
+) {
+  const include = options?.includeContent ? 'true' : 'false'
+  return request<Chapter[]>({
+    path: `/memoirs/${memoirId}/chapters?include_content=${include}`,
+  })
 }
 
 /** Delete memoir and cascaded chapters / interviews / messages. */
@@ -281,6 +300,8 @@ export interface PostMessageResult {
   user_turn_count: number
   auto_generate_at: number
   generated?: GeneratedChapter
+  generation_started?: boolean
+  generation_status?: string
 }
 
 /** First-time start only. Use forceNew when you intentionally want a fresh session. */
@@ -294,7 +315,7 @@ export function startInterview(
     method: 'POST',
     data: {
       topic,
-      chapter_id: options?.chapterId,
+      chapter_id: options?.chapterId || undefined,
       force_new: options?.forceNew ?? false,
     },
   })

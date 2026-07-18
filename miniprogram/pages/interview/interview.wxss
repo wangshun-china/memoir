@@ -265,6 +265,15 @@
   color: #6b3a1a !important;
 }
 
+.wait-hint {
+  margin-bottom: 10rpx;
+  font-size: 24rpx;
+  color: #8a7b66;
+  background: #f7f1e7;
+  border-radius: 12rpx;
+  padding: 10rpx 14rpx;
+}
+
 .gen-banner {
   margin-bottom: 10rpx;
   background: #e8efdf;

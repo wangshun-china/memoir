@@ -57,8 +57,10 @@ Page({
         birth_place: (this._form.birthPlace || '').trim() || undefined,
         creator_relation: (this._form.relation || '').trim() || undefined,
       })
+      const firstChapter = memoir.chapters && memoir.chapters[0]
+      const chapterQ = firstChapter?.id ? `&chapterId=${firstChapter.id}` : ''
       wx.redirectTo({
-        url: `/pages/interview/interview?memoirId=${memoir.id}&mode=start&topic=${encodeURIComponent('童年与家庭')}`,
+        url: `/pages/interview/interview?memoirId=${memoir.id}&mode=start&topic=${encodeURIComponent('童年与家庭')}${chapterQ}`,
       })
     } catch (e: any) {
       this.setData({ submitting: false, error: e?.message || '创建失败' })

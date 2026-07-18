@@ -83,7 +83,7 @@ Page({
       this.setData({ loading: true, error: '' })
       await ensureLogin()
       const memoir = await getMemoir(memoirId)
-      const chapters = await listChapters(memoirId)
+      const chapters = await listChapters(memoirId, { includeContent: true })
       const views = chapters.map(buildChapterView)
       const preferredId = preferChapterId || this.data.activeId
       const preferred =

@@ -35,8 +35,10 @@
   <!-- 底部固定：输入 + 发送始终可见，无需上滑找按钮 -->
   <view class="composer safe-bottom">
     <view wx:if="{{error}}" class="error">{{error}}</view>
-    <view wx:if="{{generatedPreview}}" class="gen-banner" bindtap="onViewGenerated">
-      <text class="gen-banner-text">✓ 章节草稿已保存，点此查看</text>
+    <view wx:if="{{waitHint}}" class="wait-hint">{{waitHint}}</view>
+    <view wx:if="{{generatedPreview || generationStatus === 'generating' || generationStatus === 'ready'}}" class="gen-banner" bindtap="onViewGenerated">
+      <text class="gen-banner-text" wx:if="{{generationStatus === 'generating'}}">⏳ 章节正在后台生成…</text>
+      <text class="gen-banner-text" wx:else>✓ 章节草稿已保存，点此查看</text>
     </view>
 
     <view class="compose-row" wx:if="{{!finished}}">

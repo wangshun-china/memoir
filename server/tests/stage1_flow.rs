@@ -163,10 +163,11 @@ async fn create_memoir_seeds_nine_default_chapters() {
     assert_eq!(listed_arr.len(), 9);
     assert_eq!(listed_arr[0]["title"], "童年与家庭");
     assert_eq!(listed_arr[8]["title"], "我想留下的话");
-    // Progress fields present even when empty.
+    // Progress fields present even when empty; default list omits full content.
     assert_eq!(listed_arr[0]["has_interview"], false);
     assert_eq!(listed_arr[0]["has_draft"], false);
     assert_eq!(listed_arr[0]["message_count"], 0);
+    assert!(listed_arr[0]["content"].is_null() || listed_arr[0]["content"] == "");
 
     // Delete memoir (and cascade).
     let (status, _) = json_request(
@@ -290,6 +291,8 @@ async fn interview_message_round_trip_and_finish() {
     assert_eq!(msg_resp["user_message"]["content"], user_text);
     assert_eq!(msg_resp["assistant_message"]["role"], "assistant");
     assert_eq!(msg_resp["user_turn_count"], 1);
+    assert!(msg_resp.get("generation_started").is_some());
+    assert!(msg_resp.get("generation_status").is_some());
     let assistant = msg_resp["assistant_message"]["content"]
         .as_str()
         .unwrap_or("");
@@ -332,7 +335,7 @@ async fn interview_message_round_trip_and_finish() {
     let (status, chapters) = json_request(
         &app,
         "GET",
-        &format!("/api/v1/memoirs/{memoir_id}/chapters"),
+        &format!("/api/v1/memoirs/{memoir_id}/chapters?include_content=true"),
         Some(token),
         None,
     )
