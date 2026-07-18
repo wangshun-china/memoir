@@ -26,7 +26,7 @@ curl -fsS http://172.17.0.1:18080/health
 公网链路：
 
 ```text
-http://api.wangshun.work
+https://api.wangshun.work
   -> shared nginx gateway
   -> host port 18080
   -> memoir-api:8080
