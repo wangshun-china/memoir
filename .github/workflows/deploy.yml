@@ -179,3 +179,34 @@ jobs:
           fi
           curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$HEALTH_URL" |
             grep -q '"service":"memoir-server"'
+      - name: Clean old memoir images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_ref="$(docker inspect memoir-api --format '{{.Config.Image}}')"
+          ghcr_repository="${RELEASE_GHCR_IMAGE%:*}"
+          acr_repository="${RELEASE_ACR_IMAGE%:*}"
+
+          cleanup_repository_images() {
+            local repository="$1"
+            local stale_refs=()
+
+            mapfile -t stale_refs < <(
+              docker image ls "$repository" --format '{{.Repository}}:{{.Tag}}' |
+                grep -Fvx "$current_ref" |
+                grep -v ':<none>$' |
+                sort -u || true
+            )
+
+            if (( ${#stale_refs[@]} > 0 )); then
+              printf 'Removing old memoir images from %s:\n' "$repository"
+              printf '  %s\n' "${stale_refs[@]}"
+              docker image rm -f "${stale_refs[@]}"
+            fi
+          }
+
+          cleanup_repository_images "$ghcr_repository"
+          cleanup_repository_images "$acr_repository"
+          docker image prune -f \
+            --filter "label=org.opencontainers.image.source=https://github.com/${{ github.repository }}"
