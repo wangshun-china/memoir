@@ -70,9 +70,8 @@ powershell -ExecutionPolicy Bypass -File scripts\win_expose_api.ps1
 
 ```text
 open a pull request
-  -> GitHub Actions test
-manual workflow_dispatch (aliyun or wsl)
-  -> GitHub Actions test
+  -> .github/workflows/ci.yml checks
+manual .github/workflows/deploy.yml (aliyun or wsl)
   -> build immutable image
   -> push GHCR + Aliyun ACR
   -> Self-hosted Runner prefers GHCR and falls back to ACR
@@ -82,11 +81,12 @@ manual workflow_dispatch (aliyun or wsl)
 
 镜像标签使用完整 Git commit SHA，便于定位和回滚。
 
-部署 job 运行在组织级 `[self-hosted, aliyun]` Runner 上。Actions 需要以下
-GitHub Secrets：
+部署 job 运行在所选的组织级 `[self-hosted, aliyun]` 或 `[self-hosted, wsl]`
+Runner 上。Actions 需要以下 GitHub Secrets：
 
 - `MEMOIR_PG_PASSWORD`
 - `JWT_SECRET`
+- `ADMIN_RECOVERY_SECRET`（可选，用于管理员忘记密码）
 - `LLM_API_BASE`
 - `LLM_API_KEY`
 - `LLM_MODEL`
@@ -95,9 +95,8 @@ GitHub Secrets：
 - `ALIYUN_ACR_PASSWORD`
 
 ACR 使用仓库变量 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_USERNAME` 和
-`MEMOIR_ACR_IMAGE_NAME`。首次部署前还需要将仓库变量
-`PRODUCTION_DEPLOY_ENABLED` 设置为 `true`。push 不触发此 workflow；生产构建和部署
-必须手动运行。变量未启用时，手动运行只测试和构建镜像，不连接目标服务器。
+`MEMOIR_ACR_IMAGE_NAME`。push 不触发部署 workflow；生产构建和部署必须从 GitHub Actions 手动运行
+`Build and Deploy`。
 
 生产数据库密码首次初始化后不能只靠修改环境变量完成轮换；轮换时还需要在
 PostgreSQL 中执行对应的密码修改。

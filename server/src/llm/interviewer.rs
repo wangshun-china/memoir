@@ -75,7 +75,10 @@ mod tests {
     #[test]
     fn interviewer_prompt_encodes_oral_history_craft() {
         let p = INTERVIEWER_SYSTEM_PROMPT;
-        assert!(p.contains("一次只提一个") || p.contains("一个开放式"), "single open question");
+        assert!(
+            p.contains("一次只提一个") || p.contains("一个开放式"),
+            "single open question"
+        );
         assert!(
             p.contains("时间") && p.contains("地点") && p.contains("感受"),
             "follow-up on concrete detail"
@@ -84,6 +87,9 @@ mod tests {
             p.contains("绝不虚构") || p.contains("不虚构") || p.contains("不要当成事实"),
             "no fabrication"
         );
-        assert!(p.contains("口述") || p.contains("回忆录"), "memoir/oral history framing");
+        assert!(
+            p.contains("口述") || p.contains("回忆录"),
+            "memoir/oral history framing"
+        );
     }
 }

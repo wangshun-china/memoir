@@ -344,7 +344,10 @@ async fn interview_message_round_trip_and_finish() {
     let ch0 = &chapters.as_array().unwrap()[0];
     assert_eq!(ch0["title"], "童年与家庭");
     assert!(!ch0["content"].as_str().unwrap_or("").is_empty());
-    assert_eq!(ch0["has_interview"], true, "reader must not show 待采访 after dialogue");
+    assert_eq!(
+        ch0["has_interview"], true,
+        "reader must not show 待采访 after dialogue"
+    );
     assert_eq!(ch0["has_draft"], true);
     assert!(ch0["message_count"].as_i64().unwrap_or(0) >= 1);
 

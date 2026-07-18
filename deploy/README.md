@@ -20,13 +20,13 @@
 ```bash
 cd /opt/memoir/deploy
 docker compose --env-file .env --env-file .release.env ps
-curl -fsS http://127.0.0.1:18080/health
+curl -fsS http://172.17.0.1:18080/health
 ```
 
 公网链路：
 
 ```text
-https://api.wangshun.work
+http://api.wangshun.work
   -> shared nginx gateway
   -> host port 18080
   -> memoir-api:8080

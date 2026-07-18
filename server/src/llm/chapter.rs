@@ -97,7 +97,11 @@ pub fn format_transcript_capped(history: &[InterviewMessage], max_chars: usize) 
 }
 
 /// Offline-friendly draft when LLM is unavailable: stitch user answers only.
-pub fn fallback_chapter_draft(topic: &str, subject_name: &str, history: &[InterviewMessage]) -> String {
+pub fn fallback_chapter_draft(
+    topic: &str,
+    subject_name: &str,
+    history: &[InterviewMessage],
+) -> String {
     let mut parts: Vec<String> = history
         .iter()
         .filter(|m| m.role == "user")
@@ -165,11 +169,18 @@ mod tests {
     fn transcript_cap_keeps_recent_and_stays_under_limit() {
         let mut history = Vec::new();
         for i in 0..50 {
-            history.push(msg("user", &format!("第{i}段很长的口述内容，重复填充一二三四五六七八九十。")));
+            history.push(msg(
+                "user",
+                &format!("第{i}段很长的口述内容，重复填充一二三四五六七八九十。"),
+            ));
             history.push(msg("assistant", &format!("那第{i}件事发生在哪里？")));
         }
         let capped = format_transcript_capped(&history, 500);
-        assert!(capped.chars().count() <= 520, "len={}", capped.chars().count());
+        assert!(
+            capped.chars().count() <= 520,
+            "len={}",
+            capped.chars().count()
+        );
         assert!(capped.contains("前文已省略") || capped.contains("第49"));
     }
 }

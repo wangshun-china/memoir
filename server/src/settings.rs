@@ -60,10 +60,18 @@ impl LlmRuntime {
 pub async fn seed_settings_from_env(pool: &PgPool, config: &Config) -> AppResult<()> {
     // Only seed non-empty env values. Never lock empty strings into app_settings
     // (that used to block real LLM config until manual admin edit).
-    if let Some(base) = config.llm_api_base.as_deref().filter(|s| !s.trim().is_empty()) {
+    if let Some(base) = config
+        .llm_api_base
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
         upsert_setting(pool, "llm_api_base", base.trim(), false).await?;
     }
-    if let Some(key) = config.llm_api_key.as_deref().filter(|s| !s.trim().is_empty()) {
+    if let Some(key) = config
+        .llm_api_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
         upsert_setting(pool, "llm_api_key", key.trim(), false).await?;
     }
     if !config.llm_model.trim().is_empty() {

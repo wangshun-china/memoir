@@ -71,13 +71,13 @@ export WECHAT_APP_SECRET=你的小程序AppSecret
 
 ## CI/CD
 
-`.github/workflows/pipeline.yml`：
+GitHub Actions 分为两个职责明确的 workflow：
 
-1. PR 和 `main` push 执行格式检查、Clippy 和测试。
-2. `main` push 构建不可变镜像并同时推送到 GHCR 和阿里云 ACR。
-3. 阿里云 Self-hosted Runner 将运行时密钥写入服务器部署目录。
-4. 服务器优先拉取 GHCR，失败时回退 ACR，然后运行 Docker Compose。
-5. 验证容器健康检查和公网 HTTPS 健康检查。
+1. `.github/workflows/ci.yml` 在 PR 中执行格式检查、Clippy、测试和小程序辅助测试。
+2. `.github/workflows/deploy.yml` 仅手动触发，可选择 `aliyun` 或 `wsl`。
+3. 部署 workflow 构建不可变镜像并同时推送到 GHCR 和阿里云 ACR。
+4. Self-hosted Runner 优先拉取 GHCR，失败时回退 ACR，然后运行 Docker Compose。
+5. 最后验证目标环境健康检查；普通 push 不触发构建或部署。
 
 生产服务器只拉取镜像，不在服务器编译源码。生产运行文件位于
 `/opt/memoir/deploy`。

@@ -1,7 +1,6 @@
-name: CI and deploy
+name: Build and Deploy
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       target_env:
@@ -18,86 +17,43 @@ permissions:
   packages: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: deploy-${{ github.repository }}-${{ github.event.inputs.target_env }}
+  cancel-in-progress: false
 
 env:
-  CARGO_TERM_COLOR: always
   GHCR_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/memoir-api
   ACR_REGISTRY: ${{ vars.ALIYUN_ACR_REGISTRY }}
   ACR_IMAGE_NAME: ${{ vars.MEMOIR_ACR_IMAGE_NAME || 'wangshun_build/memoir-api' }}
 
 jobs:
-  test:
-    name: Rust checks
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: memoir
-          POSTGRES_PASSWORD: memoir
-          POSTGRES_DB: memoir
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U memoir -d memoir"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-    defaults:
-      run:
-        working-directory: server
-    env:
-      DATABASE_URL: postgres://memoir:memoir@127.0.0.1:5432/memoir
-      JWT_SECRET: ci-only-jwt-secret
-      ALLOW_DEV_LOGIN: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.88.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server
-      - name: Formatting
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
-      - name: Tests
-        run: |
-          # CI service is ephemeral; still use a dedicated test DB name for clarity.
-          PGPASSWORD=memoir psql -h 127.0.0.1 -U memoir -d memoir -c "SELECT 1" >/dev/null
-          PGPASSWORD=memoir psql -h 127.0.0.1 -U memoir -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='memoir_test'" | grep -q 1 \
-            || PGPASSWORD=memoir psql -h 127.0.0.1 -U memoir -d postgres -c "CREATE DATABASE memoir_test OWNER memoir;"
-          DATABASE_URL=postgres://memoir:memoir@127.0.0.1:5432/memoir_test \
-          TEST_DATABASE_URL=postgres://memoir:memoir@127.0.0.1:5432/memoir_test \
-            cargo test --all-targets --all-features --locked
-
-  miniprogram-helpers:
-    name: Miniprogram pure helpers
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: verify_goal_helpers
-        run: node scripts/verify_goal_helpers.mjs
-
-  build:
-    name: Build and push image
-    if: github.event_name != 'pull_request'
-    needs: test
+  build-and-push:
+    name: Build and Push Image
     runs-on: ubuntu-latest
     outputs:
       ghcr_image: ${{ steps.image.outputs.ghcr }}
       acr_image: ${{ steps.image.outputs.acr }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate build configuration
+        env:
+          ACR_USERNAME: ${{ vars.ALIYUN_ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          required=(ACR_REGISTRY ACR_IMAGE_NAME ACR_USERNAME ACR_PASSWORD)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Actions configuration: ${name}"
+              exit 1
+            fi
+          done
+          test -f server/Dockerfile || {
+            echo "::error::Dockerfile not found: server/Dockerfile"
+            exit 1
+          }
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -113,7 +69,8 @@ jobs:
         run: |
           echo "ghcr=${GHCR_IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "acr=${ACR_REGISTRY}/${ACR_IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - name: Build and push image to both registries
+        uses: docker/build-push-action@v6
         with:
           context: ./server
           file: ./server/Dockerfile
@@ -123,15 +80,20 @@ jobs:
             ${{ env.GHCR_IMAGE_NAME }}:latest
             ${{ steps.image.outputs.acr }}
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
     name: Deploy to ${{ github.event.inputs.target_env }}
-    if: github.event_name == 'workflow_dispatch' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
-    needs: build
+    needs: build-and-push
     runs-on: [self-hosted, "${{ github.event.inputs.target_env }}"]
-    environment: production
+    environment: ${{ github.event.inputs.target_env }}
+    permissions:
+      contents: read
+      packages: read
     env:
       MEMOIR_PG_PASSWORD: ${{ secrets.MEMOIR_PG_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -144,10 +106,20 @@ jobs:
       GHCR_TOKEN: ${{ github.token }}
       ACR_USERNAME: ${{ vars.ALIYUN_ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-      RELEASE_GHCR_IMAGE: ${{ needs.build.outputs.ghcr_image }}
-      RELEASE_ACR_IMAGE: ${{ needs.build.outputs.acr_image }}
+      RELEASE_GHCR_IMAGE: ${{ needs.build-and-push.outputs.ghcr_image }}
+      RELEASE_ACR_IMAGE: ${{ needs.build-and-push.outputs.acr_image }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          set -euo pipefail
+          required=(MEMOIR_PG_PASSWORD JWT_SECRET ACR_REGISTRY ACR_USERNAME ACR_PASSWORD)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Actions configuration: ${name}"
+              exit 1
+            fi
+          done
       - name: Prepare deployment environment
         run: |
           install -d -m 700 .deploy
@@ -173,7 +145,7 @@ jobs:
           install -m 644 deploy/docker-compose.yml /opt/memoir/deploy/docker-compose.yml
           install -m 700 deploy/deploy.sh /opt/memoir/deploy/deploy.sh
           install -m 600 .deploy/runtime.env /opt/memoir/deploy/.env.next
-      - name: Resolve and deploy immutable image
+      - name: Deploy with GHCR primary and Aliyun ACR fallback
         run: |
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
@@ -198,8 +170,12 @@ jobs:
           cd /opt/memoir/deploy
           mv .env.next .env
           ./deploy.sh
-      - name: Verify public API
+      - name: Verify deployment
         run: |
-          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors \
-            http://api.wangshun.work/health |
+          if [[ "${{ github.event.inputs.target_env }}" == "aliyun" ]]; then
+            HEALTH_URL="http://api.wangshun.work/health"
+          else
+            HEALTH_URL="http://172.17.0.1:18080/health"
+          fi
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$HEALTH_URL" |
             grep -q '"service":"memoir-server"'

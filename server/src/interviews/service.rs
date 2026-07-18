@@ -317,7 +317,9 @@ pub fn opening_hook_for_topic(topic: &str) -> &'static str {
         "童年与家庭" => {
             "先从一个具体的小地方开始：您还记得小时候住的地方，门口或院子是什么样的吗？"
         }
-        "求学经历" => "先从一个具体的小事开始：您还记得第一次去学校那天，路上或教室里是什么情形吗？",
+        "求学经历" => {
+            "先从一个具体的小事开始：您还记得第一次去学校那天，路上或教室里是什么情形吗？"
+        }
         "青年时代" => "先从一个具体的画面开始：青年时有没有一件事，让您觉得「自己长大了」？",
         "工作与事业" => {
             "先从一个具体的岗位开始：您还记得第一份工作，或者第一天上班时在做什么吗？"
@@ -338,25 +340,6 @@ pub fn opening_hook_for_topic(topic: &str) -> &'static str {
             "这一章想听听您最想留给家人的话。先不必写很长：如果现在只能说一句，您最想对亲人说什么？"
         }
         _ => "先从一个具体、好回答的小事开始：关于这个话题，您最先想到的一件事是什么？",
-    }
-}
-
-#[cfg(test)]
-mod opening_tests {
-    use super::opening_hook_for_topic;
-
-    #[test]
-    fn leaving_words_topic_not_about_childhood_home() {
-        let hook = opening_hook_for_topic("我想留下的话");
-        assert!(hook.contains("留给") || hook.contains("亲人") || hook.contains("一句"));
-        assert!(!hook.contains("住的地方"));
-        assert!(!hook.contains("门口"));
-    }
-
-    #[test]
-    fn childhood_still_can_ask_about_home() {
-        let hook = opening_hook_for_topic("童年与家庭");
-        assert!(hook.contains("小时候") || hook.contains("门口") || hook.contains("院子"));
     }
 }
 
@@ -603,8 +586,7 @@ pub async fn post_message(
             generation_status = "generating".into();
             let state_bg = state.clone();
             tokio::spawn(async move {
-                if let Err(e) =
-                    generate_from_session(&state_bg, user_id, session_id, "auto").await
+                if let Err(e) = generate_from_session(&state_bg, user_id, session_id, "auto").await
                 {
                     tracing::warn!(error = %e, %session_id, "async auto chapter generation failed");
                     let _ = mark_generation_status(&state_bg.pool, session_id, "failed").await;
@@ -871,4 +853,23 @@ async fn insert_message(
     .fetch_one(pool)
     .await?;
     Ok(row)
+}
+
+#[cfg(test)]
+mod opening_tests {
+    use super::opening_hook_for_topic;
+
+    #[test]
+    fn leaving_words_topic_not_about_childhood_home() {
+        let hook = opening_hook_for_topic("我想留下的话");
+        assert!(hook.contains("留给") || hook.contains("亲人") || hook.contains("一句"));
+        assert!(!hook.contains("住的地方"));
+        assert!(!hook.contains("门口"));
+    }
+
+    #[test]
+    fn childhood_still_can_ask_about_home() {
+        let hook = opening_hook_for_topic("童年与家庭");
+        assert!(hook.contains("小时候") || hook.contains("门口") || hook.contains("院子"));
+    }
 }

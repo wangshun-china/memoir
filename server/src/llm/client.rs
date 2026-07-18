@@ -73,7 +73,8 @@ impl CompleteOptions {
 #[async_trait]
 pub trait LlmClient: Send + Sync {
     async fn complete(&self, messages: &[ChatMessage]) -> anyhow::Result<LlmCompletion> {
-        self.complete_with(messages, CompleteOptions::default()).await
+        self.complete_with(messages, CompleteOptions::default())
+            .await
     }
 
     async fn complete_with(
@@ -461,7 +462,8 @@ mod tests {
 
     #[test]
     fn extract_reasoning_content_fallback() {
-        let v = json!({"choices":[{"message":{"content":null,"reasoning_content":"思考后：问细节"}}]});
+        let v =
+            json!({"choices":[{"message":{"content":null,"reasoning_content":"思考后：问细节"}}]});
         assert!(extract_message_content(&v).unwrap().contains("细节"));
     }
 

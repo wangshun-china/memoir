@@ -38,7 +38,10 @@ impl IntoResponse for AppError {
                     "database error".to_string(),
                 )
             }
-            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "登录已失效，请重新登录".to_string()),
+            AppError::Jwt(_) => (
+                StatusCode::UNAUTHORIZED,
+                "登录已失效，请重新登录".to_string(),
+            ),
             AppError::Other(e) => {
                 tracing::error!(error = %e, "internal error");
                 (

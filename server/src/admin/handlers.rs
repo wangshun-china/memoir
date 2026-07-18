@@ -260,8 +260,8 @@ async fn change_password(
     admin: AdminAuth,
     Json(body): Json<ChangePasswordRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let admin_id = Uuid::parse_str(&admin.subject)
-        .map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
+    let admin_id =
+        Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
     validate_password(&body.new_password)?;
 
     let row = sqlx::query_as::<_, AdminRow>(
@@ -303,8 +303,8 @@ struct AdminMe {
 }
 
 async fn admin_me(State(state): State<AppState>, admin: AdminAuth) -> AppResult<Json<AdminMe>> {
-    let admin_id = Uuid::parse_str(&admin.subject)
-        .map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
+    let admin_id =
+        Uuid::parse_str(&admin.subject).map_err(|_| AppError::Unauthorized("登录已失效".into()))?;
     let row = sqlx::query_as::<_, AdminRow>(
         r#"
         SELECT id, username, password_hash, display_name
