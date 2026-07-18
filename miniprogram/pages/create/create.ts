@@ -58,12 +58,19 @@ Page({
         creator_relation: (this._form.relation || '').trim() || undefined,
       })
       const firstChapter = memoir.chapters && memoir.chapters[0]
-      const chapterQ = firstChapter?.id ? `&chapterId=${firstChapter.id}` : ''
+      const chapterQ =
+        firstChapter && firstChapter.id ? '&chapterId=' + firstChapter.id : ''
       wx.redirectTo({
-        url: `/pages/interview/interview?memoirId=${memoir.id}&mode=start&topic=${encodeURIComponent('童年与家庭')}${chapterQ}`,
+        url:
+          '/pages/interview/interview?memoirId=' +
+          memoir.id +
+          '&mode=start&topic=' +
+          encodeURIComponent('童年与家庭') +
+          chapterQ,
       })
     } catch (e: any) {
-      this.setData({ submitting: false, error: e?.message || '创建失败' })
+      const msg = e && e.message ? e.message : '创建失败'
+      this.setData({ submitting: false, error: msg })
     }
   },
 })

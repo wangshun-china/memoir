@@ -51,7 +51,7 @@ Page({
         memoirCount: memoirs.length,
       })
     } catch (e: any) {
-      this.setData({ error: e?.message || '加载失败' })
+      this.setData({ error: (e && e.message) || '加载失败' })
     }
   },
 
@@ -62,7 +62,7 @@ Page({
       this.setData({ loggingIn: false, loggedIn: true })
       await this.refresh()
     } catch (e: any) {
-      this.setData({ loggingIn: false, error: e?.message || '微信登录失败' })
+      this.setData({ loggingIn: false, error: (e && e.message) || '微信登录失败' })
     }
   },
 
@@ -100,7 +100,7 @@ Page({
     try {
       await updateProfile({ avatar_url: avatarUrl })
     } catch (err: any) {
-      this.setData({ error: err?.message || '头像保存失败' })
+      this.setData({ error: (err && err.message) || '头像保存失败' })
     }
   },
 
@@ -117,7 +117,7 @@ Page({
   },
 
   async onNicknameBlur(e: WechatMiniprogram.Input) {
-    const nickname = (this._nickDraft ?? e.detail.value ?? '').trim()
+    const nickname = ((this._nickDraft != null ? this._nickDraft : (e.detail.value != null ? e.detail.value : ''))).trim()
     // 先卸掉编辑框，再异步保存，避免输入过程 setData
     this.setData({ editingNick: false, nickSeed: '' })
     if (!nickname || nickname === this.data.nickname) return
@@ -129,7 +129,7 @@ Page({
         nickInitial: me.nickname.charAt(0) || '我',
       })
     } catch (err: any) {
-      this.setData({ error: err?.message || '昵称保存失败' })
+      this.setData({ error: (err && err.message) || '昵称保存失败' })
     }
   },
 })

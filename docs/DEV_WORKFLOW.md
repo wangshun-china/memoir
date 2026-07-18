@@ -38,21 +38,33 @@ docker compose -f docker-compose.dev.yml --env-file .env.development ps
 
 ## 小程序
 
-开发者工具连接本地 API：
+开发者工具 / 同 Wi‑Fi 真机调试本地 API：
 
 ```bash
+# WSL
+./scripts/local_dev.sh start          # 会调用 miniprogram-env.sh local
+# 或单独：
 ./scripts/miniprogram-env.sh local
 ```
 
-真机、体验版和正式版连接远程 API：
+`local` 会尽量写入 **Windows 局域网 IP**（如 `192.168.x.x:18081`），**不要**用
+WSL 虚拟网段 `172.26.x`——手机访问不到。
+
+手机真机还要在 Windows 上做端口转发（管理员 PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\win_expose_api.ps1
+```
+
+然后：手机与电脑同一 Wi‑Fi → 开发者工具重新编译 → **真机调试**（比「预览」更稳）。
+
+体验版 / 外网好友应使用远程 API：
 
 ```bash
 ./scripts/miniprogram-env.sh remote
 ```
 
-真机中的 `127.0.0.1` 指手机本身，因此真机必须使用远程 HTTPS 域名。
-在 WSL NAT 网络下，`local` 脚本会自动把当前 WSL IP 写入小程序配置，
-避免依赖 Windows 的 localhost 转发。
+`127.0.0.1` 在手机上指手机自己；远程正式环境最终需要 **HTTPS + 合法域名**。
 
 ## 发布
 

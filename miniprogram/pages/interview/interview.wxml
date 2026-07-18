@@ -7,7 +7,7 @@
       <text class="save-pill">{{saveHint}}</text>
     </view>
     <text class="topic-main">{{topic}}</text>
-    <text class="topic-sub">已对话 {{userTurnCount}} 轮 · 满 {{autoGenerateAt}} 轮自动生成章节</text>
+    <text class="topic-sub">{{topicHint}} · 已对话 {{userTurnCount}} 轮 · 满 {{autoGenerateAt}} 轮自动生成</text>
   </view>
 
   <scroll-view

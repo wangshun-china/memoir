@@ -99,19 +99,19 @@ Page({
         loading: false,
       })
     } catch (e: any) {
-      this.setData({ loading: false, error: e?.message || '加载失败' })
+      this.setData({ loading: false, error: (e && e.message) || '加载失败' })
     }
   },
 
   applyActive(views: ChapterView[], preferred?: ChapterView) {
     const ch = preferred || views[0]
     this.setData({
-      activeId: ch?.id || '',
-      activeContent: ch?.content || '',
-      activeHasInterview: !!ch?.hasInterview,
-      activeHasDraft: !!ch?.hasDraft,
-      activeSessionId: ch?.sessionId || '',
-      activeTopic: ch?.title || '童年与家庭',
+      activeId: (ch && ch.id) || '',
+      activeContent: (ch && ch.content) || '',
+      activeHasInterview: !!(ch && ch.hasInterview),
+      activeHasDraft: !!(ch && ch.hasDraft),
+      activeSessionId: (ch && ch.sessionId) || '',
+      activeTopic: (ch && ch.title) || '童年与家庭',
     })
   },
 
@@ -153,10 +153,10 @@ Page({
     try {
       const generated = await generateChapter(sessionId)
       wx.showToast({ title: '章节已生成', icon: 'success' })
-      await this.reload(generated.chapter?.id || this.data.activeId)
+      await this.reload((generated.chapter && generated.chapter.id) || this.data.activeId)
     } catch (e: any) {
-      this.setData({ error: e?.message || '生成失败' })
-      wx.showToast({ title: e?.message || '生成失败', icon: 'none' })
+      this.setData({ error: (e && e.message) || '生成失败' })
+      wx.showToast({ title: (e && e.message) || '生成失败', icon: 'none' })
     } finally {
       this.setData({ generating: false })
     }
@@ -179,8 +179,8 @@ Page({
             wx.switchTab({ url: '/pages/home/home' })
           }, 400)
         } catch (e: any) {
-          this.setData({ deleting: false, error: e?.message || '删除失败' })
-          wx.showToast({ title: e?.message || '删除失败', icon: 'none' })
+          this.setData({ deleting: false, error: (e && e.message) || '删除失败' })
+          wx.showToast({ title: (e && e.message) || '删除失败', icon: 'none' })
         }
       },
     })

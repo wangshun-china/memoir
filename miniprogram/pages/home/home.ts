@@ -41,7 +41,7 @@ Page({
     } catch (e: any) {
       this.setData({
         loading: false,
-        error: e?.message || '加载失败',
+        error: (e && e.message) || '加载失败',
         loggedIn: isLoggedIn(),
       })
     }
@@ -56,7 +56,7 @@ Page({
     } catch (e: any) {
       this.setData({
         loggingIn: false,
-        error: e?.message || '微信登录失败',
+        error: (e && e.message) || '微信登录失败',
       })
     }
   },
@@ -123,7 +123,7 @@ Page({
           wx.showToast({ title: '已删除', icon: 'success' })
           await this.load()
         } catch (err: any) {
-          wx.showToast({ title: err?.message || '删除失败', icon: 'none' })
+          wx.showToast({ title: (err && err.message) || '删除失败', icon: 'none' })
         }
       },
     })

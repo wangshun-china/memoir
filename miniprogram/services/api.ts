@@ -59,13 +59,13 @@ export function request<T = WechatMiniprogram.IAnyObject>(options: RequestOption
       data: options.data,
       header,
       // Default 90s; interview/generate can still take tens of seconds even after caps.
-      timeout: options.timeout ?? 90000,
+      timeout: (options.timeout != null ? options.timeout : 90000),
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data as T)
         } else {
           const errBody = res.data as { error?: string }
-          reject(new Error(errBody?.error || `HTTP ${res.statusCode}`))
+          reject(new Error((errBody && errBody.error) || `HTTP ${res.statusCode}`))
         }
       },
       fail(err) {
@@ -109,8 +109,8 @@ export function wechatLogin(profile?: {
             auth: false,
             data: {
               code: res.code,
-              nickname: profile?.nickname,
-              avatar_url: profile?.avatar_url,
+              nickname: (profile && profile.nickname),
+              avatar_url: (profile && profile.avatar_url),
             },
           })
           setToken(auth.token)
@@ -249,7 +249,7 @@ export function listChapters(
   memoirId: string,
   options?: { includeContent?: boolean },
 ) {
-  const include = options?.includeContent ? 'true' : 'false'
+  const include = (options && options.includeContent) ? 'true' : 'false'
   return request<Chapter[]>({
     path: `/memoirs/${memoirId}/chapters?include_content=${include}`,
   })
@@ -315,8 +315,8 @@ export function startInterview(
     method: 'POST',
     data: {
       topic,
-      chapter_id: options?.chapterId || undefined,
-      force_new: options?.forceNew ?? false,
+      chapter_id: (options && options.chapterId) || undefined,
+      force_new: ((options && options.forceNew) != null ? !!(options && options.forceNew) : false),
     },
   })
 }

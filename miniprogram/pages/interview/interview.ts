@@ -19,11 +19,28 @@ const { afterSuccessfulSend } = require('../../utils/composer_clear') as {
   }) => { draft: string; composerKey: number; shouldRemount: boolean }
 }
 
+/** Short subtitle under chapter title (UI only; server has full opening hook). */
+function topicHintFor(topic: string): string {
+  const map: Record<string, string> = {
+    童年与家庭: '小时候住过的家',
+    求学经历: '学校与读书的日子',
+    青年时代: '青春里的选择与成长',
+    工作与事业: '岗位上的故事',
+    婚姻与家庭: '成家与相伴',
+    人生转折: '改变命运的那几步',
+    子女与家庭生活: '和孩子在一起的日子',
+    退休与晚年: '晚年的日常与心境',
+    我想留下的话: '最想留给家人的话',
+  }
+  return map[topic] || '慢慢说，想到什么说什么'
+}
+
 Page({
   data: {
     memoirId: '',
     sessionId: '',
     topic: '童年与家庭',
+    topicHint: '小时候住过的家',
     chapterId: '',
     messages: [] as InterviewMessage[],
     composerKey: 0,
@@ -52,7 +69,8 @@ Page({
     const sessionId = query.sessionId || ''
     const chapterId = query.chapterId || ''
     const topic = decodeURIComponent(query.topic || '童年与家庭')
-    this.setData({ memoirId, topic, chapterId })
+    const topicHint = topicHintFor(topic)
+    this.setData({ memoirId, topic, topicHint, chapterId })
     if (!memoirId) {
       this.setData({ error: '缺少回忆录 ID' })
       return
@@ -87,7 +105,7 @@ Page({
         wx.showToast({ title: '已恢复历史对话', icon: 'none' })
       }
     } catch (e: any) {
-      this.setData({ error: e?.message || '无法打开采访' })
+      this.setData({ error: (e && e.message) || '无法打开采访' })
     } finally {
       wx.hideLoading()
     }
@@ -228,7 +246,7 @@ Page({
       const last = messages[messages.length - 1]
       this.setData({
         messages,
-        userTurnCount: resp.user_turn_count ?? this.data.userTurnCount,
+        userTurnCount: (resp.user_turn_count != null ? resp.user_turn_count : this.data.userTurnCount),
         autoGenerateAt: resp.auto_generate_at || this.data.autoGenerateAt,
         saveHint: '已保存到数据库',
         waitHint: '',
@@ -256,7 +274,7 @@ Page({
         })
       }
       this.setData({
-        error: e?.message || '发送失败',
+        error: (e && e.message) || '发送失败',
         saveHint: '保存失败，请重试',
         waitHint: '',
       })
@@ -283,7 +301,7 @@ Page({
       this.onGenerated(generated)
       wx.showToast({ title: '章节已生成', icon: 'success' })
     } catch (e: any) {
-      this.setData({ error: e?.message || '生成失败' })
+      this.setData({ error: (e && e.message) || '生成失败' })
     } finally {
       wx.hideLoading()
       this.setData({ generating: false, waitHint: '' })
@@ -315,7 +333,7 @@ Page({
   onViewGenerated() {
     const g = this._lastGenerated
     const memoirId = this.data.memoirId
-    if (g?.chapter?.id) {
+    if ((g && g.chapter && g.chapter.id)) {
       wx.navigateTo({
         url: `/pages/reader/reader?memoirId=${memoirId}&chapterId=${g.chapter.id}`,
       })
@@ -335,7 +353,7 @@ Page({
       this.setData({ finished: true, saveHint: '采访已结束，记录已保存' })
       await this.reloadMessages()
     } catch (e: any) {
-      this.setData({ error: e?.message || '结束失败' })
+      this.setData({ error: (e && e.message) || '结束失败' })
     } finally {
       this.setData({ sending: false, waitHint: '' })
     }
