@@ -1,15 +1,26 @@
 <navigation-bar title="创建回忆录" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
 
 <view class="page">
-  <view class="intro">
-    <text class="intro-title">先记下主人是谁</text>
-    <text class="intro-desc">只需最少信息即可开始。其余细节可以在采访中慢慢补充。</text>
+  <view class="steps">
+    <view class="step on">
+      <text class="step-num">1</text>
+      <text class="step-label">主人信息</text>
+    </view>
+    <view class="step-line"></view>
+    <view class="step">
+      <text class="step-num">2</text>
+      <text class="step-label">开始采访</text>
+    </view>
   </view>
 
-  <view class="form-card">
+  <view class="intro">
+    <text class="intro-title">先记下主人是谁</text>
+    <text class="intro-desc">只需最少信息。其余细节可以在采访里慢慢补充。</text>
+  </view>
+
+  <view class="form-card card-surface">
     <view class="field">
       <text class="label">回忆录主人姓名 <text class="req">*</text></text>
-      <!-- 不绑定 value + setData，避免输入法被重置成英文 -->
       <input
         class="input"
         placeholder="例如：王大爷"
@@ -60,9 +71,32 @@
 
     <view class="field">
       <text class="label">您与主人的关系</text>
+      <view class="chips">
+        <view
+          class="chip {{relationChip === '本人' ? 'on' : ''}}"
+          data-v="本人"
+          bindtap="onRelationChip"
+        >本人</view>
+        <view
+          class="chip {{relationChip === '儿子' ? 'on' : ''}}"
+          data-v="儿子"
+          bindtap="onRelationChip"
+        >儿子</view>
+        <view
+          class="chip {{relationChip === '女儿' ? 'on' : ''}}"
+          data-v="女儿"
+          bindtap="onRelationChip"
+        >女儿</view>
+        <view
+          class="chip {{relationChip === '其他' ? 'on' : ''}}"
+          data-v="其他"
+          bindtap="onRelationChip"
+        >其他</view>
+      </view>
       <input
+        wx:if="{{relationChip === '其他' || !relationChip}}"
         class="input"
-        placeholder="儿子 / 女儿 / 本人"
+        placeholder="可填写：儿媳 / 孙子…"
         maxlength="20"
         hold-keyboard="{{true}}"
         adjust-position="{{true}}"
@@ -73,5 +107,5 @@
 
   <button class="btn-primary submit" loading="{{submitting}}" bindtap="onSubmit">创建并开始采访</button>
   <view wx:if="{{error}}" class="error">{{error}}</view>
-  <view class="tip">创建后会自动生成「童年与家庭」等 9 个章节模板。</view>
+  <view class="tip">创建后会准备 9 个章节，先从「童年与家庭」聊起。</view>
 </view>

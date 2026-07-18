@@ -4,100 +4,84 @@
   <view class="hero-card">
     <view class="hero-badge">人生故事 · 慢慢说</view>
     <text class="hero-title">把零散回忆，收成一本家书</text>
-    <text class="hero-sub">温和文字采访 · 自动整理章节 · 留给家人珍藏</text>
+    <text class="hero-sub">温和采访 · 自动成章 · 留给家人珍藏</text>
     <view class="hero-stats" wx:if="{{loggedIn}}">
       <view class="stat-pill">
         <text class="stat-num">{{memoirs.length}}</text>
         <text class="stat-label">本回忆录</text>
       </view>
       <view class="stat-pill soft">
-        <text class="stat-label">先从童年与家庭开始，轻松没有压力</text>
+        <text class="stat-label">一点一点说，不着急。随时可以停下来。</text>
       </view>
     </view>
   </view>
 
-  <!-- 未登录：真实微信登录，无 mock -->
-  <view wx:if="{{!loggedIn}}" class="login-card">
+  <view wx:if="{{!loggedIn}}" class="login-card card-surface">
+    <view class="login-icon">📖</view>
     <text class="login-title">登录后开始整理回忆</text>
-    <text class="login-desc">使用微信账号登录，数据仅保存在您的账号下。</text>
-    <button class="btn-primary" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
+    <text class="login-desc">使用微信登录，内容只保存在您的账号下，家人可代为操作。</text>
+    <button class="btn-primary login-btn" loading="{{loggingIn}}" bindtap="onLogin">微信一键登录</button>
     <view wx:if="{{error}}" class="error">{{error}}</view>
   </view>
 
   <block wx:else>
     <view class="toolbar">
-      <button class="btn-primary" bindtap="onCreate">＋ 创建一本回忆录</button>
+      <button class="btn-primary create-btn" bindtap="onCreate">＋ 创建一本回忆录</button>
     </view>
 
-    <view wx:if="{{loading}}" class="state-box">
+    <view wx:if="{{loading}}" class="state-box card-surface">
       <view class="spinner"></view>
-      <text class="muted">正在加载您的回忆录…</text>
+      <text class="muted">正在加载…</text>
     </view>
-    <view wx:elif="{{error}}" class="state-box error-box">
+    <view wx:elif="{{error}}" class="state-box card-surface error-box">
       <text class="error">{{error}}</text>
-      <button class="btn-secondary" size="mini" bindtap="load">重试</button>
+      <button class="btn-secondary" bindtap="load">重试</button>
     </view>
 
-    <view wx:elif="{{memoirs.length === 0}}" class="empty-card">
-      <view class="empty-icon">📖</view>
+    <view wx:elif="{{memoirs.length === 0}}" class="empty-card card-surface">
+      <view class="empty-icon">📔</view>
       <text class="empty-title">还没有回忆录</text>
-      <text class="empty-desc">创建后会自动准备 9 个章节模板，采访者会陪您一问一答地讲故事。</text>
+      <text class="empty-desc">创建后会准备 9 个章节。采访者会一问一答陪您慢慢讲。</text>
       <button class="btn-primary empty-btn" bindtap="onCreate">现在创建</button>
     </view>
 
     <view class="list" wx:else>
       <view class="section-title">我的回忆录</view>
-      <view
-        class="card"
-        wx:for="{{memoirs}}"
-        wx:key="id"
-        data-id="{{item.id}}"
-        bindtap="onOpenMemoir"
-      >
-        <view class="card-top">
+      <view class="card" wx:for="{{memoirs}}" wx:key="id">
+        <view class="card-top" data-id="{{item.id}}" bindtap="onOpenReader">
           <view class="avatar">{{item.subject_name[0] || '忆'}}</view>
           <view class="card-head">
             <text class="card-title">{{item.title}}</text>
             <text class="card-meta">主人 · {{item.subject_name}}</text>
           </view>
-          <text class="chevron">›</text>
+          <text class="card-more" catchtap="onCardMore" data-id="{{item.id}}" data-title="{{item.title}}">···</text>
         </view>
-        <view class="card-tags">
-          <!-- has_interview is normalized in home.ts (message_count / continue_session_id) -->
-          <text wx:if="{{item.has_interview}}" class="tag soft">采访中 · 已保存 {{item.message_count || 0}} 条</text>
-          <text wx:else class="tag">尚未开始采访</text>
+
+        <view class="status-row">
+          <text class="tag {{item.status_tone === 'active' ? 'soft' : ''}}">{{item.status_text}}</text>
+          <text class="link-text" data-id="{{item.id}}" catchtap="onOpenReader">查看正文 ›</text>
         </view>
-        <view class="card-actions">
-          <button
-            wx:if="{{!item.has_interview}}"
-            class="btn-secondary start-btn"
-            size="mini"
-            catchtap="onStartInterview"
-            data-id="{{item.id}}"
-          >开始采访</button>
-          <button
-            wx:else
-            class="btn-secondary start-btn"
-            size="mini"
-            catchtap="onContinueInterview"
-            data-id="{{item.id}}"
-            data-session-id="{{item.continue_session_id}}"
-            data-topic="{{item.continue_topic || '童年与家庭'}}"
-          >继续采访</button>
-          <button
-            class="btn-secondary start-btn"
-            size="mini"
-            catchtap="onOpenReader"
-            data-id="{{item.id}}"
-          >查看正文</button>
-          <button
-            class="btn-danger-mini start-btn"
-            size="mini"
-            catchtap="onDeleteMemoir"
-            data-id="{{item.id}}"
-            data-title="{{item.title}}"
-          >删除</button>
+
+        <view class="progress-track" wx:if="{{item.has_interview}}">
+          <view class="progress-fill" style="width: {{item.progress_pct}}%;"></view>
         </view>
+        <text class="progress-hint" wx:if="{{item.has_interview}}">对话越丰富，整理出的章节越生动</text>
+
+        <!-- 唯一主操作：开始 / 继续 -->
+        <button
+          wx:if="{{!item.has_interview}}"
+          class="btn-primary card-cta"
+          catchtap="onStartInterview"
+          data-id="{{item.id}}"
+        >{{item.primary_label}}</button>
+        <button
+          wx:else
+          class="btn-primary card-cta"
+          catchtap="onContinueInterview"
+          data-id="{{item.id}}"
+          data-session-id="{{item.continue_session_id}}"
+          data-topic="{{item.continue_topic || '童年与家庭'}}"
+        >{{item.primary_label}}</button>
       </view>
     </view>
   </block>

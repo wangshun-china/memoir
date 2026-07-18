@@ -41,9 +41,14 @@ assert(
   deriveMemoirInterviewState({ continue_session_id: 'abc', message_count: 0 }).has_interview === true,
   'continue_session_id alone marks started',
 )
+const started = deriveMemoirInterviewState({ message_count: 8 })
+assert(started.primary_label === '继续采访', 'primary label for started')
+assert(started.status_text.indexOf('采访中') >= 0, 'status text for started')
+assert(started.progress_pct > 0, 'progress pct from messages')
 const normalized = normalizeMemoirList([{ id: 'm1', message_count: 2, has_interview: false }])
 assert(normalized[0].has_interview === true, 'normalize flips has_interview from message_count')
 assert(normalized[0].message_count === 2, 'normalize keeps count')
+assert(normalized[0].primary_label === '继续采访', 'normalized primary label')
 
 console.log(
   JSON.stringify(

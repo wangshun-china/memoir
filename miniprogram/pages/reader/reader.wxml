@@ -5,19 +5,24 @@
   <view wx:elif="{{error}}" class="state error">{{error}}</view>
   <block wx:else>
     <view class="header">
-      <text class="title">{{memoirTitle}}</text>
-      <text class="meta">主人 · {{subjectName}}</text>
-      <view class="header-actions">
-        <button class="btn-danger-outline" size="mini" loading="{{deleting}}" bindtap="onDeleteMemoir">删除回忆录</button>
+      <view class="header-main">
+        <text class="title">{{memoirTitle}}</text>
+        <text class="meta">主人 · {{subjectName}}</text>
       </view>
+      <text class="header-more" bindtap="onMore">···</text>
     </view>
 
+    <view class="progress-line">
+      <text class="progress-text">章节目录 · {{draftCount}}/{{chapters.length}} 章有草稿</text>
+    </view>
+
+    <!-- 章节目录：横向大标签，便于点选 -->
     <scroll-view scroll-x class="tabs" enhanced show-scrollbar="{{false}}">
       <view class="tabs-inner">
         <view
           wx:for="{{chapters}}"
           wx:key="id"
-          class="tab {{item.id === activeId ? 'tab-on' : ''}}"
+          class="tab {{item.id === activeId ? 'tab-on' : ''}} {{item.hasDraft ? 'has-draft' : ''}}"
           data-id="{{item.id}}"
           bindtap="onSelectChapter"
         >
@@ -28,20 +33,20 @@
     </scroll-view>
 
     <scroll-view scroll-y class="body">
-      <view wx:if="{{activeContent}}" class="content-card">
+      <view wx:if="{{activeContent}}" class="content-card paper">
+        <text class="chapter-name">{{activeTopic}}</text>
         <text class="content-text">{{activeContent}}</text>
       </view>
-      <view wx:else class="empty-card">
-        <text class="empty-title">{{activeHasInterview ? '已有采访，尚未生成正文' : '本章还没有正文'}}</text>
+      <view wx:else class="empty-card card-surface">
+        <text class="empty-title">{{activeHasInterview ? '还没整理成文' : '这一章还没开始'}}</text>
         <text class="empty-desc" wx:if="{{activeHasInterview}}">
-          本章已保存采访记录。可继续补充对话，或单独点「生成本章」整理成回忆录草稿。
+          已有采访记录。可以继续补充，或点「生成本章」整理成草稿。
         </text>
         <text class="empty-desc" wx:else>
-          请先进行文字采访。满 20 轮对话会自动生成；也可在采访页随时手动生成。
+          点下方「去采访」，和采访者一问一答慢慢说。
         </text>
       </view>
 
-      <!-- 去采访 与 生成 必须分开 -->
       <view class="action-row">
         <button class="btn-primary action-half" bindtap="onGoInterview">
           {{activeHasInterview ? '继续采访' : '去采访'}}
@@ -54,7 +59,7 @@
         >生成本章</button>
       </view>
       <text wx:if="{{activeHasInterview && !activeContent}}" class="action-hint">
-        生成不会清空对话，只会把口述整理成章节草稿。
+        生成不会清空对话，只整理成章节文字。
       </text>
     </scroll-view>
   </block>

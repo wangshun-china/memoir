@@ -1,17 +1,17 @@
 .page {
   min-height: 100vh;
-  padding: 28rpx 32rpx 100rpx;
+  padding: 24rpx 32rpx 120rpx;
   background:
     radial-gradient(ellipse 80% 40% at 0% 0%, rgba(232, 168, 120, 0.28), transparent 60%),
     radial-gradient(ellipse 70% 35% at 100% 10%, rgba(196, 168, 120, 0.18), transparent 55%),
-    #f4efe4;
+    var(--bg);
   box-sizing: border-box;
 }
 
 .hero-card {
   background: linear-gradient(145deg, #fff9f1 0%, #f7e8d8 48%, #f0d7c0 100%);
   border: 1rpx solid rgba(196, 92, 38, 0.12);
-  border-radius: 28rpx;
+  border-radius: var(--radius-lg);
   padding: 36rpx 32rpx 32rpx;
   box-shadow: var(--shadow);
   margin-bottom: 28rpx;
@@ -33,8 +33,8 @@
 .hero-badge {
   display: inline-block;
   font-size: 22rpx;
-  color: #9a3f14;
-  background: rgba(255, 255, 255, 0.7);
+  color: var(--brand-deep);
+  background: rgba(255, 255, 255, 0.75);
   border: 1rpx solid rgba(196, 92, 38, 0.15);
   border-radius: 999rpx;
   padding: 6rpx 16rpx;
@@ -45,16 +45,15 @@
   display: block;
   font-size: 44rpx;
   font-weight: 700;
-  color: #2a2318;
+  color: var(--ink);
   line-height: 1.35;
-  letter-spacing: 0.5rpx;
 }
 
 .hero-sub {
   display: block;
   margin-top: 14rpx;
   font-size: 28rpx;
-  color: #6f634f;
+  color: var(--muted);
   line-height: 1.55;
 }
 
@@ -66,7 +65,7 @@
 }
 
 .stat-pill {
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.78);
   border-radius: 18rpx;
   padding: 14rpx 20rpx;
   min-width: 120rpx;
@@ -81,35 +80,40 @@
   display: block;
   font-size: 40rpx;
   font-weight: 700;
-  color: #c45c26;
+  color: var(--brand);
   line-height: 1.1;
 }
 
 .stat-label {
   display: block;
   font-size: 24rpx;
-  color: #6f634f;
+  color: var(--muted);
   margin-top: 4rpx;
+  line-height: 1.45;
 }
 
 .toolbar {
-  margin-bottom: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.create-btn {
+  width: 100%;
 }
 
 .section-title {
   font-size: 28rpx;
-  color: #6f634f;
+  color: var(--muted);
   margin: 8rpx 4rpx 18rpx;
   font-weight: 600;
 }
 
 .card {
-  background: #fffdf8;
-  border: 1rpx solid #e6d9c4;
-  border-radius: 24rpx;
-  padding: 28rpx;
-  margin-bottom: 22rpx;
-  box-shadow: 0 8rpx 28rpx rgba(68, 42, 18, 0.06);
+  background: var(--bg-elevated);
+  border: 1rpx solid var(--line);
+  border-radius: var(--radius);
+  padding: 28rpx 28rpx 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: var(--shadow-sm);
 }
 
 .card-top {
@@ -119,12 +123,12 @@
 }
 
 .avatar {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 20rpx;
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 22rpx;
   background: linear-gradient(145deg, #f0c9a8, #e07a3a);
   color: #fff;
-  font-size: 32rpx;
+  font-size: 34rpx;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -139,72 +143,89 @@
 
 .card-title {
   display: block;
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 650;
-  color: #2a2318;
+  color: var(--ink);
 }
 
 .card-meta {
   display: block;
   margin-top: 6rpx;
   font-size: 26rpx;
-  color: #6f634f;
+  color: var(--muted);
 }
 
-.chevron {
-  font-size: 40rpx;
-  color: #c4b6a0;
-  line-height: 1;
+.card-more {
+  width: 64rpx;
+  height: 64rpx;
+  line-height: 56rpx;
+  text-align: center;
+  font-size: 36rpx;
+  color: var(--muted-2);
+  letter-spacing: 2rpx;
+  flex-shrink: 0;
 }
 
-.card-tags {
+.status-row {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  justify-content: space-between;
   margin-top: 20rpx;
-  flex-wrap: wrap;
+  gap: 16rpx;
 }
 
 .tag {
-  font-size: 22rpx;
-  color: #9a3f14;
+  font-size: 24rpx;
+  color: var(--brand-deep);
   background: #f7e4d4;
   border-radius: 999rpx;
-  padding: 6rpx 14rpx;
+  padding: 8rpx 16rpx;
 }
 
 .tag.soft {
   color: #5a6b4a;
-  background: #e8efdf;
+  background: var(--success-bg);
 }
 
-.card-actions {
-  margin-top: 20rpx;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
+.link-text {
+  font-size: 26rpx;
+  color: var(--brand);
+  padding: 8rpx 0;
 }
 
-.start-btn {
-  font-size: 26rpx !important;
-  padding: 0 22rpx !important;
-  margin: 0 !important;
+.progress-track {
+  margin-top: 16rpx;
+  height: 10rpx;
+  background: #efe4d4;
+  border-radius: 999rpx;
+  overflow: hidden;
 }
 
-.btn-danger-mini {
-  background: #f8e8e6 !important;
-  color: #a33 !important;
-  border: 1rpx solid rgba(170, 51, 51, 0.35) !important;
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e8a878, var(--brand));
+  border-radius: 999rpx;
+  min-width: 4%;
+  transition: width 0.25s ease;
 }
 
-.btn-danger-mini::after {
-  border: none;
+.progress-hint {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--muted-2);
+}
+
+.card-cta {
+  margin-top: 22rpx !important;
+  width: 100%;
 }
 
 .state-box,
 .empty-card {
-  background: #fffdf8;
+  background: var(--bg-elevated);
   border: 1rpx dashed #e0d2bc;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   padding: 48rpx 36rpx;
   text-align: center;
 }
@@ -212,81 +233,88 @@
 .spinner {
   width: 48rpx;
   height: 48rpx;
-  border: 4rpx solid #e6d9c4;
-  border-top-color: #c45c26;
+  border: 4rpx solid var(--line);
+  border-top-color: var(--brand);
   border-radius: 50%;
   margin: 0 auto 20rpx;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .muted {
   font-size: 28rpx;
-  color: #6f634f;
+  color: var(--muted);
 }
 
 .error-box .error {
   display: block;
-  color: #a33;
+  color: var(--danger);
   margin-bottom: 16rpx;
   font-size: 28rpx;
 }
 
 .empty-icon {
-  font-size: 64rpx;
+  font-size: 72rpx;
   margin-bottom: 12rpx;
 }
 
 .empty-title {
   display: block;
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 650;
-  color: #2a2318;
+  color: var(--ink);
 }
 
 .empty-desc {
   display: block;
   margin-top: 12rpx;
   font-size: 28rpx;
-  color: #6f634f;
-  line-height: 1.6;
+  color: var(--muted);
+  line-height: 1.65;
 }
 
 .empty-btn {
-  margin-top: 28rpx;
-  width: 70%;
+  margin-top: 32rpx;
+  width: 75%;
 }
 
 .login-card {
-  background: #fffdf8;
-  border: 1rpx solid #e6d9c4;
-  border-radius: 24rpx;
-  padding: 40rpx 32rpx;
-  box-shadow: 0 8rpx 28rpx rgba(68, 42, 18, 0.06);
+  padding: 48rpx 36rpx;
   text-align: center;
+}
+
+.login-icon {
+  font-size: 64rpx;
+  margin-bottom: 12rpx;
 }
 
 .login-title {
   display: block;
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 650;
-  color: #2a2318;
+  color: var(--ink);
 }
 
 .login-desc {
   display: block;
-  margin: 12rpx 0 28rpx;
+  margin: 14rpx 0 32rpx;
   font-size: 28rpx;
-  color: #6f634f;
-  line-height: 1.55;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.login-btn {
+  width: 100%;
 }
 
 .login-card .error {
   display: block;
   margin-top: 16rpx;
-  color: #a33;
+  color: var(--danger);
   font-size: 26rpx;
 }

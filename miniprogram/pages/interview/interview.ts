@@ -201,6 +201,24 @@ Page({
     await this.sendWithAction('', action)
   },
 
+  /** 次要操作：生成 / 不想说 / 结束 — 避免底栏过满 */
+  onMoreTools() {
+    if (this.data.finished || this.data.sending) return
+    const items = ['生成回忆录', '这个问题不想说', '结束本次采访']
+    wx.showActionSheet({
+      itemList: items,
+      success: async (res) => {
+        if (res.tapIndex === 0) {
+          await this.onGenerate()
+        } else if (res.tapIndex === 1) {
+          await this.sendWithAction('', 'prefer_not')
+        } else if (res.tapIndex === 2) {
+          await this.endSession()
+        }
+      },
+    })
+  },
+
   async sendWithAction(
     content: string,
     action: 'normal' | 'dont_know' | 'change_question' | 'prefer_not' | 'end',

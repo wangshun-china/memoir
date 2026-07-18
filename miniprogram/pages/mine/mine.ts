@@ -89,8 +89,14 @@ Page({
     wx.switchTab({ url: '/pages/home/home' })
   },
 
-  onRefreshProfile() {
-    this.refresh()
+  onShowHelp() {
+    wx.showModal({
+      title: '怎么使用',
+      content:
+        '1. 在首页创建回忆录，填主人姓名\n2. 和采访者一问一答慢慢说\n3. 说得差不多时点「生成回忆录」\n4. 在「查看正文」阅读整理好的章节',
+      showCancel: false,
+      confirmText: '知道了',
+    })
   },
 
   async onChooseAvatar(e: WechatMiniprogram.CustomEvent) {

@@ -9,47 +9,42 @@
 ```bash
 cd /mnt/g/project/memoir
 chmod +x scripts/*.sh deploy/deploy.sh
-./scripts/local_dev.sh start
+./scripts/miniprogram-env.sh local
 ```
 
-服务地址：
+统一入口 **`scripts/miniprogram-env.sh`**（`local_dev.sh` 只是薄封装）：
 
-- WSL 内 API 健康检查：`http://127.0.0.1:18081/health`
-- **管理台**：`http://127.0.0.1:18081/admin/`
-- Windows/小程序 API：脚本自动使用当前 WSL IP 和端口 `18081`
-- PostgreSQL：`127.0.0.1:5433`
-
-管理台：
-- **首次访问**会要求创建真实管理员账号（用户名+密码，Argon2 存库），无默认/mock 密码
-- 之后用该账号登录；支持在「账号安全」中改密
-- 总览/用户/回忆录/用量均为数据库真实数据
-
-常用命令：
-
-```bash
-./scripts/local_dev.sh start
-./scripts/local_dev.sh stop
-./scripts/local_dev.sh rebuild
-./scripts/local_dev.sh logs
-./scripts/local_dev.sh status
-```
-
-`start` 始终执行 `docker compose up -d --build`。没有代码变化时 Docker
-复用缓存；代码变化时自动重建 API 镜像。
-
-本地脚本会读取 Windows 机器级的 `LOCAL_AGENT_BASE_URL` 和
-`LOCAL_AGENT_MODEL`，并分别映射为后端的 `LLM_API_BASE` 和 `LLM_MODEL`。
-API Key 仍来自 gitignored 的 `.env.development`。
-
-## 小程序 API 环境
+| 命令 | 行为 |
+|------|------|
+| `local` | **关远程**容器 → **开本地** Docker → 小程序 `env.ts` 指向局域网 API |
+| `remote` | **关本地**容器 → **开远程** Docker → 小程序 `env.ts` 指向 `api.wangshun.work` |
+| `stop` | **本地 + 远程**容器全部关闭 |
+| `status` | 查看两端 compose 状态与当前 `env.ts` |
 
 ```bash
 ./scripts/miniprogram-env.sh local
 ./scripts/miniprogram-env.sh remote
+./scripts/miniprogram-env.sh stop
+./scripts/miniprogram-env.sh status
 ```
 
-- `local`：自动生成 `http://<WSL_IP>:18081/api/v1`
-- `remote`：`http://api.wangshun.work/api/v1`（Stage 1，后续切换 HTTPS）
+本地地址：
+
+- API / 健康检查：`http://127.0.0.1:18081/health`
+- 管理台：`http://127.0.0.1:18081/admin/`
+- 小程序：优先写入 Windows **局域网 IP**（真机需再跑 `scripts/win_expose_api.ps1`）
+- PostgreSQL：`127.0.0.1:5433`
+
+远程 SSH（可选，写在 `.env.development`，勿提交密码）：
+
+```bash
+REMOTE_SSH_HOST=120.26.186.0
+REMOTE_SSH_USER=root
+# REMOTE_SSH_PASS=...   # 有 sshpass 时可用；否则用本机 SSH 密钥
+```
+
+本地脚本会读取 Windows 机器级的 `LOCAL_AGENT_BASE_URL` /
+`LOCAL_AGENT_MODEL`。API Key 来自 gitignored 的 `.env.development`。
 
 生成的 `miniprogram/config/env.ts` 不提交。小程序中不得放入 AppSecret、
 LLM Key、JWT Secret 或数据库密码。

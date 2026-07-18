@@ -12,9 +12,9 @@ Page({
   data: {
     submitting: false,
     error: '',
+    relationChip: '',
   },
 
-  // 输入内容放实例字段，避免 setData 回写 value 打断中文输入法
   _form: {
     subjectName: '',
     preferredName: '',
@@ -37,6 +37,16 @@ Page({
   },
   onRelation(e: WechatMiniprogram.Input) {
     this._form.relation = e.detail.value || ''
+  },
+
+  onRelationChip(e: WechatMiniprogram.TouchEvent) {
+    const v = (e.currentTarget.dataset.v as string) || ''
+    this.setData({ relationChip: v })
+    if (v && v !== '其他') {
+      this._form.relation = v
+    } else if (v === '其他') {
+      this._form.relation = ''
+    }
   },
 
   async onSubmit() {

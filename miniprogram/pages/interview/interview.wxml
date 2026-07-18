@@ -7,7 +7,7 @@
       <text class="save-pill">{{saveHint}}</text>
     </view>
     <text class="topic-main">{{topic}}</text>
-    <text class="topic-sub">{{topicHint}} · 已对话 {{userTurnCount}} 轮 · 满 {{autoGenerateAt}} 轮自动生成</text>
+    <text class="topic-sub">{{topicHint}} · 已对话 {{userTurnCount}} 轮</text>
   </view>
 
   <scroll-view
@@ -26,23 +26,26 @@
     >
       <view class="avatar-sm {{item.role === 'user' ? 'me' : 'ai'}}">{{item.role === 'user' ? '我' : '采'}}</view>
       <view class="bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">
+        <text class="bubble-role" wx:if="{{item.role !== 'user'}}">采访者</text>
         <text class="bubble-text">{{item.content}}</text>
       </view>
     </view>
     <view class="messages-spacer"></view>
   </scroll-view>
 
-  <!-- 底部固定：输入 + 发送始终可见，无需上滑找按钮 -->
   <view class="composer safe-bottom">
     <view wx:if="{{error}}" class="error">{{error}}</view>
     <view wx:if="{{waitHint}}" class="wait-hint">{{waitHint}}</view>
-    <view wx:if="{{generatedPreview || generationStatus === 'generating' || generationStatus === 'ready'}}" class="gen-banner" bindtap="onViewGenerated">
-      <text class="gen-banner-text" wx:if="{{generationStatus === 'generating'}}">⏳ 章节正在后台生成…</text>
+    <view
+      wx:if="{{generatedPreview || generationStatus === 'generating' || generationStatus === 'ready'}}"
+      class="gen-banner"
+      bindtap="onViewGenerated"
+    >
+      <text class="gen-banner-text" wx:if="{{generationStatus === 'generating'}}">章节正在后台生成… 完成后可点此查看</text>
       <text class="gen-banner-text" wx:else>✓ 章节草稿已保存，点此查看</text>
     </view>
 
     <view class="compose-row" wx:if="{{!finished}}">
-      <!-- composerAlive + composerKey: unmount/remount after send so native text is wiped -->
       <textarea
         wx:if="{{composerAlive}}"
         id="composer-{{composerKey}}"
@@ -65,30 +68,12 @@
         bindtap="onSend"
       >发送</button>
     </view>
-    <view wx:else class="input-done">本次采访已结束，对话已保存在云端。</view>
+    <view wx:else class="input-done">本次采访已结束，记录已保存。</view>
 
-    <!-- 生成与结束单独一行，不和「不知道/换题」混在一起 -->
-    <view class="gen-row">
-      <button
-        class="btn-gen-main"
-        loading="{{generating}}"
-        disabled="{{sending || generating || userTurnCount < 1}}"
-        bindtap="onGenerate"
-      >生成回忆录</button>
-      <button
-        class="btn-end-main"
-        disabled="{{finished || sending}}"
-        data-action="end"
-        bindtap="onAction"
-      >结束采访</button>
+    <view class="tool-row" wx:if="{{!finished}}">
+      <button class="tool-btn" size="mini" disabled="{{sending}}" data-action="dont_know" bindtap="onAction">不知道</button>
+      <button class="tool-btn" size="mini" disabled="{{sending}}" data-action="change_question" bindtap="onAction">换一题</button>
+      <button class="tool-btn more" size="mini" disabled="{{sending}}" bindtap="onMoreTools">更多</button>
     </view>
-
-    <scroll-view scroll-x class="actions-scroll" enhanced show-scrollbar="{{false}}">
-      <view class="actions">
-        <button class="action" size="mini" disabled="{{finished || sending}}" data-action="dont_know" bindtap="onAction">不知道</button>
-        <button class="action" size="mini" disabled="{{finished || sending}}" data-action="change_question" bindtap="onAction">换一题</button>
-        <button class="action" size="mini" disabled="{{finished || sending}}" data-action="prefer_not" bindtap="onAction">不想说</button>
-      </view>
-    </scroll-view>
   </view>
 </view>

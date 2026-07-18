@@ -18,53 +18,36 @@ GitHub。生产环境使用 `LLM_API_BASE`、`LLM_API_KEY` 和 `LLM_MODEL`。
 cd /mnt/g/project/memoir
 cp .env.development.example .env.development
 chmod +x scripts/*.sh
-./scripts/local_dev.sh start
+./scripts/miniprogram-env.sh local
 ```
 
-如果已有 `.env.development`，不要覆盖。
+如果已有 `.env.development`，不要覆盖。可按需填写 `REMOTE_SSH_*`（远程开关机用）。
 
 验证：
 
 ```bash
 curl -fsS http://127.0.0.1:18081/health
-docker compose -f docker-compose.dev.yml --env-file .env.development ps
+./scripts/miniprogram-env.sh status
 ```
 
-停止不会删除 PostgreSQL 数据卷：
+## 环境切换（唯一入口）
 
 ```bash
-./scripts/local_dev.sh stop
+./scripts/miniprogram-env.sh local   # 关远程 → 开本地 → env.ts=local
+./scripts/miniprogram-env.sh remote  # 关本地 → 开远程 → env.ts=remote
+./scripts/miniprogram-env.sh stop    # 本地+远程全部停
+./scripts/miniprogram-env.sh status
 ```
 
-## 小程序
-
-开发者工具 / 同 Wi‑Fi 真机调试本地 API：
-
-```bash
-# WSL
-./scripts/local_dev.sh start          # 会调用 miniprogram-env.sh local
-# 或单独：
-./scripts/miniprogram-env.sh local
-```
-
-`local` 会尽量写入 **Windows 局域网 IP**（如 `192.168.x.x:18081`），**不要**用
-WSL 虚拟网段 `172.26.x`——手机访问不到。
-
-手机真机还要在 Windows 上做端口转发（管理员 PowerShell）：
+`local` 会尽量把小程序 API 写成 **Windows 局域网 IP:18081**。真机还需管理员执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\win_expose_api.ps1
 ```
 
-然后：手机与电脑同一 Wi‑Fi → 开发者工具重新编译 → **真机调试**（比「预览」更稳）。
+手机与电脑同一 Wi‑Fi → 重新编译 → **真机调试**。
 
-体验版 / 外网好友应使用远程 API：
-
-```bash
-./scripts/miniprogram-env.sh remote
-```
-
-`127.0.0.1` 在手机上指手机自己；远程正式环境最终需要 **HTTPS + 合法域名**。
+远程正式环境最终需要 **HTTPS + 合法域名**。
 
 ## 发布
 

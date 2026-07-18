@@ -56,6 +56,7 @@ Page({
     generating: false,
     deleting: false,
     loading: true,
+    draftCount: 0,
     error: '',
   },
 
@@ -79,8 +80,10 @@ Page({
   async reload(preferChapterId?: string) {
     const memoirId = this.data.memoirId
     if (!memoirId) return
+    const soft = !!this.data.chapters.length
     try {
-      this.setData({ loading: true, error: '' })
+      if (!soft) this.setData({ loading: true, error: '' })
+      else this.setData({ error: '' })
       await ensureLogin()
       const memoir = await getMemoir(memoirId)
       const chapters = await listChapters(memoirId, { includeContent: true })
@@ -92,10 +95,12 @@ Page({
         views.find((c) => c.hasInterview) ||
         views[0]
       this.applyActive(views, preferred)
+      const draftCount = views.filter((c) => c.hasDraft).length
       this.setData({
         memoirTitle: memoir.title,
         subjectName: memoir.subject_name,
         chapters: views,
+        draftCount,
         loading: false,
       })
     } catch (e: any) {
@@ -162,11 +167,24 @@ Page({
     }
   },
 
+  onMore() {
+    wx.showActionSheet({
+      itemList: ['删除整本回忆录'],
+      itemColor: '#a33',
+      success: (res) => {
+        if (res.tapIndex === 0) this.onDeleteMemoir()
+      },
+    })
+  },
+
   onDeleteMemoir() {
     if (this.data.deleting) return
     wx.showModal({
       title: '删除回忆录',
-      content: `确定删除「${this.data.memoirTitle || '这本回忆录'}」？采访记录与章节草稿将一并删除，且不可恢复。`,
+      content:
+        '确定删除「' +
+        (this.data.memoirTitle || '这本回忆录') +
+        '」？采访记录与章节草稿将一并删除，无法恢复。',
       confirmText: '删除',
       confirmColor: '#a33',
       success: async (res) => {
