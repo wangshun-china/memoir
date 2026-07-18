@@ -262,7 +262,9 @@ pub async fn post_message(
             c
         }
         Err(e) => {
-            tracing::warn!(error = %e, "LLM failed; using safe fallback");
+            // Keep full error in DB usage logs for admin diagnosis; user still gets a soft follow-up.
+            let err = e.to_string();
+            tracing::error!(error = %err, "LLM failed during interview; using soft recovery reply");
             let _ = crate::settings::record_usage(
                 &state.pool,
                 "interview",
@@ -272,11 +274,11 @@ pub async fn post_message(
                 0,
                 0,
                 false,
-                Some(&e.to_string()),
+                Some(&err),
             )
             .await;
             crate::llm::client::LlmCompletion {
-                content: "谢谢你。能再具体一点：那件事发生在什么地方？".into(),
+                content: "刚才我这边信号不好，没听清。您能换个说法，再讲一遍刚才那件事吗？".into(),
                 model: client.model_name().to_string(),
                 prompt_tokens: 0,
                 completion_tokens: 0,

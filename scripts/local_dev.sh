@@ -39,12 +39,59 @@ import_windows_machine_env() {
   fi
 }
 
+load_dotenv_file_values() {
+  # Load KEY/BASE/MODEL from .env.development without clobbering non-empty shell values.
+  [ -f "$ENV_FILE" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    key="${line%%=*}"
+    val="${line#*=}"
+    case "$key" in
+      LLM_API_BASE)
+        if [ -z "${LLM_API_BASE:-}" ]; then export LLM_API_BASE="$val"; fi
+        ;;
+      LLM_API_KEY)
+        if [ -z "${LLM_API_KEY:-}" ]; then export LLM_API_KEY="$val"; fi
+        ;;
+      LLM_MODEL)
+        if [ -z "${LLM_MODEL:-}" ]; then export LLM_MODEL="$val"; fi
+        ;;
+    esac
+  done < "$ENV_FILE"
+}
+
 prepare_local_ai_env() {
   import_windows_machine_env LOCAL_AGENT_BASE_URL
   import_windows_machine_env LOCAL_AGENT_MODEL
+  import_windows_machine_env LOCAL_AGENT_API_KEY
+  import_windows_machine_env DASHSCOPE_API_KEY
+  load_dotenv_file_values
 
-  export LLM_API_BASE="${LLM_API_BASE:-${LOCAL_AGENT_BASE_URL:-}}"
-  export LLM_MODEL="${LLM_MODEL:-${LOCAL_AGENT_MODEL:-gpt-4o-mini}}"
+  # Prefer non-empty values: empty LLM_API_BASE= in .env must not block LOCAL_AGENT_*.
+  if [ -z "${LLM_API_BASE:-}" ]; then
+    export LLM_API_BASE="${LOCAL_AGENT_BASE_URL:-}"
+  fi
+  if [ -z "${LLM_MODEL:-}" ]; then
+    export LLM_MODEL="${LOCAL_AGENT_MODEL:-gpt-4o-mini}"
+  fi
+  if [ -z "${LLM_API_KEY:-}" ]; then
+    export LLM_API_KEY="${LOCAL_AGENT_API_KEY:-${DASHSCOPE_API_KEY:-}}"
+  fi
+
+  if [ -n "${LLM_API_BASE:-}" ]; then
+    printf 'LLM_API_BASE=%s\n' "$LLM_API_BASE"
+    printf 'LLM_MODEL=%s\n' "${LLM_MODEL:-}"
+    if [ -n "${LLM_API_KEY:-}" ]; then
+      printf 'LLM_API_KEY=set (len=%s)\n' "${#LLM_API_KEY}"
+    else
+      printf 'WARN: LLM_API_KEY empty — interviewer will use local fallback\n'
+    fi
+  else
+    printf 'WARN: LLM_API_BASE empty — interviewer will use local fallback\n'
+  fi
 }
 
 wait_for_api() {

@@ -58,21 +58,17 @@ impl LlmRuntime {
 }
 
 pub async fn seed_settings_from_env(pool: &PgPool, config: &Config) -> AppResult<()> {
-    upsert_setting(
-        pool,
-        "llm_api_base",
-        config.llm_api_base.as_deref().unwrap_or(""),
-        false,
-    )
-    .await?;
-    upsert_setting(
-        pool,
-        "llm_api_key",
-        config.llm_api_key.as_deref().unwrap_or(""),
-        false,
-    )
-    .await?;
-    upsert_setting(pool, "llm_model", &config.llm_model, false).await?;
+    // Only seed non-empty env values. Never lock empty strings into app_settings
+    // (that used to block real LLM config until manual admin edit).
+    if let Some(base) = config.llm_api_base.as_deref().filter(|s| !s.trim().is_empty()) {
+        upsert_setting(pool, "llm_api_base", base.trim(), false).await?;
+    }
+    if let Some(key) = config.llm_api_key.as_deref().filter(|s| !s.trim().is_empty()) {
+        upsert_setting(pool, "llm_api_key", key.trim(), false).await?;
+    }
+    if !config.llm_model.trim().is_empty() {
+        upsert_setting(pool, "llm_model", config.llm_model.trim(), false).await?;
+    }
     Ok(())
 }
 
@@ -107,19 +103,44 @@ async fn upsert_setting(pool: &PgPool, key: &str, value: &str, force: bool) -> A
 }
 
 pub async fn load_runtime(pool: &PgPool, fallback: &Config) -> AppResult<LlmRuntime> {
+    // Prefer non-empty DB setting; otherwise env. Empty DB rows are ignored.
     let base = get_setting(pool, "llm_api_base")
         .await?
-        .or_else(|| fallback.llm_api_base.clone())
-        .filter(|s| !s.is_empty());
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            fallback
+                .llm_api_base
+                .clone()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
     let key = get_setting(pool, "llm_api_key")
         .await?
-        .or_else(|| fallback.llm_api_key.clone())
-        .filter(|s| !s.is_empty());
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            fallback
+                .llm_api_key
+                .clone()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
     let model = get_setting(pool, "llm_model")
         .await?
+        .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| fallback.llm_model.clone());
-    Ok(LlmRuntime::from_parts(base, key, model))
+        .unwrap_or_else(|| fallback.llm_model.trim().to_string());
+
+    let runtime = LlmRuntime::from_parts(base, key, model);
+    tracing::info!(
+        mode = runtime.client.kind(),
+        model = %runtime.model,
+        base_set = runtime.api_base.is_some(),
+        key_set = runtime.api_key.is_some(),
+        "LLM runtime loaded"
+    );
+    Ok(runtime)
 }
 
 pub async fn get_setting(pool: &PgPool, key: &str) -> AppResult<Option<String>> {
