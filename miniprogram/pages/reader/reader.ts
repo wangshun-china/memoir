@@ -127,6 +127,12 @@ Page({
     this.applyActive(this.data.chapters, ch)
   },
 
+  onOpenStoryBox() {
+    wx.navigateTo({
+      url: `/pages/storybox/storybox?memoirId=${this.data.memoirId}`,
+    })
+  },
+
   onGoInterview() {
     const { memoirId, activeId, activeTopic, activeSessionId, activeHasInterview } = this.data
     const topic = activeTopic || '童年与家庭'

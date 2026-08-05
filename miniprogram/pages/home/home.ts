@@ -6,6 +6,7 @@ import {
   Memoir,
   passwordLogin,
   resetPassword,
+  updateProfile,
   wechatLogin,
 } from '../../services/api'
 
@@ -28,7 +29,13 @@ Page({
     recoveryKey: '',
     newPass: '',
     resetting: false,
+    needProfile: false,
+    profileAvatarUrl: '',
+    profileNickname: '',
+    savingProfile: false,
   },
+
+  _profileNickDraft: '',
 
   onShow() {
     this.load()
@@ -138,13 +145,63 @@ Page({
   async onLogin() {
     this.setData({ loggingIn: true, error: '' })
     try {
-      await wechatLogin()
+      const auth = await wechatLogin()
       this.setData({ loggedIn: true, loggingIn: false })
+      // 微信已不能静默取头像昵称：登录后资料不完整就引导用户一键确认。
+      const noAvatar = !auth.avatar_url
+      const noNickname =
+        !auth.nickname || auth.nickname === '微信用户'
+      if (noAvatar || noNickname) {
+        this.setData({
+          needProfile: true,
+          profileAvatarUrl: auth.avatar_url || '',
+          profileNickname: noNickname ? '' : auth.nickname || '',
+        })
+        this._profileNickDraft = this.data.profileNickname
+      }
       await this.load()
     } catch (e: any) {
       this.setData({
         loggingIn: false,
         error: (e && e.message) || '微信登录失败',
+      })
+    }
+  },
+
+  onChooseAvatar(e: WechatMiniprogram.CustomEvent) {
+    const avatarUrl = (e.detail as { avatarUrl?: string }).avatarUrl
+    if (!avatarUrl) return
+    this.setData({ profileAvatarUrl: avatarUrl })
+  },
+
+  onProfileNickname(e: WechatMiniprogram.Input) {
+    this._profileNickDraft = e.detail.value || ''
+  },
+
+  onSkipProfile() {
+    this.setData({ needProfile: false, error: '' })
+  },
+
+  async onSaveProfile() {
+    if (this.data.savingProfile) return
+    const nickname = (this._profileNickDraft != null ? this._profileNickDraft : this.data.profileNickname || '').trim()
+    if (!nickname && !this.data.profileAvatarUrl) {
+      this.setData({ error: '请先选择头像或填写昵称' })
+      return
+    }
+    this.setData({ savingProfile: true, error: '' })
+    try {
+      await updateProfile({
+        nickname: nickname || undefined,
+        avatar_url: this.data.profileAvatarUrl || undefined,
+      })
+      this.setData({ savingProfile: false, needProfile: false })
+      wx.showToast({ title: '资料已保存', icon: 'success' })
+      await this.load()
+    } catch (e: any) {
+      this.setData({
+        savingProfile: false,
+        error: (e && e.message) || '资料保存失败',
       })
     }
   },

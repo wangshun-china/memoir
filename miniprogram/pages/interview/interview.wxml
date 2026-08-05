@@ -1,4 +1,4 @@
-<navigation-bar title="文字采访" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="文字采访" back="{{true}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view class="topic-bar">
@@ -27,7 +27,12 @@
       <view class="avatar-sm {{item.role === 'user' ? 'me' : 'ai'}}">{{item.role === 'user' ? '我' : '采'}}</view>
       <view class="bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">
         <text class="bubble-role" wx:if="{{item.role !== 'user'}}">采访者</text>
-        <text class="bubble-text">{{item.content}}</text>
+        <view wx:if="{{item.id === 'live-stream' && item.thinking}}" class="bubble-thinking">
+          <text class="bubble-thinking-label">💭 正在思考</text>
+          <text class="bubble-thinking-text">{{item.thinking}}</text>
+        </view>
+        <text wx:if="{{item.id === 'live-stream' && !item.content}}" class="bubble-text bubble-text-wait">正在思考，马上好…</text>
+        <text wx:else class="bubble-text">{{item.content}}</text>
       </view>
     </view>
     <view class="messages-spacer"></view>
@@ -74,6 +79,15 @@
       <button class="tool-btn" size="mini" disabled="{{sending}}" data-action="dont_know" bindtap="onAction">不知道</button>
       <button class="tool-btn" size="mini" disabled="{{sending}}" data-action="change_question" bindtap="onAction">换一题</button>
       <button class="tool-btn more" size="mini" disabled="{{sending}}" bindtap="onMoreTools">更多</button>
+    </view>
+    <view class="tool-row" wx:if="{{userTurnCount > 0}}">
+      <button
+        class="tool-btn more"
+        size="mini"
+        loading="{{extracting}}"
+        disabled="{{sending || extracting}}"
+        bindtap="onExtractStory"
+      >收进故事箱</button>
     </view>
   </view>
 </view>

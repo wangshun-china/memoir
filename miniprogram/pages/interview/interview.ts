@@ -1,14 +1,18 @@
 import {
   continueInterview,
   ensureLogin,
+  extractStory,
   finishInterview,
   generateChapter,
   GeneratedChapter,
   InterviewMessage,
   listMessages,
   postMessage,
+  postMessageStream,
   startInterview,
 } from '../../services/api'
+
+type LiveMessage = InterviewMessage & { thinking?: string; streaming?: boolean }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { afterSuccessfulSend } = require('../../utils/composer_clear') as {
@@ -47,6 +51,7 @@ Page({
     composerAlive: true,
     sending: false,
     generating: false,
+    extracting: false,
     finished: false,
     resumed: false,
     userTurnCount: 0,
@@ -225,6 +230,8 @@ Page({
   ): Promise<boolean> {
     if (!this.data.sessionId || this.data.finished || this.data.sending) return false
 
+    const streamable = action !== 'end'
+
     // Optimistic user bubble for normal text
     let optimisticId = ''
     if (action === 'normal' && content) {
@@ -239,20 +246,58 @@ Page({
       this.appendMessages([optimistic])
     }
 
+    // Live assistant bubble: shows thinking, then streams the answer in place.
+    const liveId = 'live-stream'
+    if (streamable) {
+      const live: LiveMessage = {
+        id: liveId,
+        session_id: this.data.sessionId,
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        streaming: true,
+      }
+      this.appendMessages([live])
+    }
+
     this.setData({
       sending: true,
       error: '',
       saveHint: '正在保存…',
-      waitHint: '正在听你说，整理下一问…',
+      waitHint: streamable ? '' : '正在听你说，整理下一问…',
     })
+
+    const updateLive = (patch: Partial<{ thinking: string; content: string }>) => {
+      const messages = this.data.messages.map((m) => {
+        if (m.id !== liveId) return m
+        const next: LiveMessage = { ...m, thinking: m.thinking || '', streaming: true }
+        if (patch.thinking != null) next.thinking = (next.thinking || '') + patch.thinking
+        if (patch.content != null) next.content = (next.content || '') + patch.content
+        return next
+      })
+      this.setData({ messages, scrollInto: `m-${liveId}` })
+    }
+
     try {
-      const resp = await postMessage(this.data.sessionId, content, action)
+      const resp = streamable
+        ? await postMessageStream(
+            this.data.sessionId,
+            content,
+            action as 'normal' | 'dont_know' | 'change_question' | 'prefer_not',
+            {
+              onThinking: (t) => updateLive({ thinking: t }),
+              onContent: (t) => updateLive({ content: t }),
+            },
+          )
+        : await postMessage(this.data.sessionId, content, action)
       if (resp.session_status === 'finished') {
         this.setData({ finished: true })
       }
 
-      // Replace optimistic / append server messages without full refetch
-      let messages = this.data.messages.filter((m) => m.id !== optimisticId)
+      // Replace optimistic + live bubbles with server-persisted messages
+      let messages = this.data.messages.filter(
+        (m) => m.id !== optimisticId && m.id !== liveId,
+      )
       if (resp.user_message) {
         const has = messages.some((m) => m.id === resp.user_message.id)
         if (!has) messages = messages.concat([resp.user_message])
@@ -285,10 +330,12 @@ Page({
       }
       return true
     } catch (e: any) {
-      // Drop optimistic bubble on failure
-      if (optimisticId) {
+      // Drop optimistic + live bubbles on failure
+      if (optimisticId || liveId) {
         this.setData({
-          messages: this.data.messages.filter((m) => m.id !== optimisticId),
+          messages: this.data.messages.filter(
+            (m) => m.id !== optimisticId && m.id !== liveId,
+          ),
         })
       }
       this.setData({
@@ -323,6 +370,40 @@ Page({
     } finally {
       wx.hideLoading()
       this.setData({ generating: false, waitHint: '' })
+    }
+  },
+
+  async onExtractStory() {
+    if (!this.data.sessionId || this.data.extracting) return
+    if (this.data.userTurnCount < 1) {
+      wx.showToast({ title: '请先讲一段回忆', icon: 'none' })
+      return
+    }
+    this.setData({ extracting: true, error: '', waitHint: '正在整理故事卡片…' })
+    wx.showLoading({ title: '收进故事箱…', mask: true })
+    try {
+      await finishInterview(this.data.sessionId)
+      const story = await extractStory(this.data.sessionId)
+      this.setData({ finished: true, saveHint: '故事已保存', waitHint: '' })
+      wx.hideLoading()
+      wx.showModal({
+        title: '已收进故事箱',
+        content: `《${story.title}》已依据 ${story.source_count} 条原始对话整理，可以去确认和归入章节。`,
+        confirmText: '打开故事箱',
+        cancelText: '留在这里',
+        success: (res) => {
+          if (res.confirm) {
+            wx.navigateTo({
+              url: `/pages/storybox/storybox?memoirId=${this.data.memoirId}`,
+            })
+          }
+        },
+      })
+    } catch (e: any) {
+      wx.hideLoading()
+      this.setData({ error: (e && e.message) || '故事整理失败', waitHint: '' })
+    } finally {
+      this.setData({ extracting: false })
     }
   },
 

@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 
 use crate::config::Config;
 
@@ -43,31 +45,50 @@ impl Default for CompleteOptions {
 
 impl CompleteOptions {
     /// Short oral-history follow-up: one question, no deep thinking.
-    pub fn interview() -> Self {
+    /// Thinking enabled → give the CoT headroom so the answer is not truncated.
+    pub fn interview(enable_thinking: bool) -> Self {
         Self {
-            max_tokens: Some(256),
+            max_tokens: Some(if enable_thinking { 2048 } else { 256 }),
             temperature: Some(0.4),
-            enable_thinking: Some(false),
+            enable_thinking: Some(enable_thinking),
         }
     }
 
-    /// Chapter draft: longer output, still no multi-minute thinking chain.
-    pub fn chapter() -> Self {
+    /// Chapter draft: longer output. Thinking improves fidelity when enabled.
+    pub fn chapter(enable_thinking: bool) -> Self {
         Self {
-            max_tokens: Some(2048),
+            max_tokens: Some(if enable_thinking { 4096 } else { 2048 }),
             temperature: Some(0.35),
-            enable_thinking: Some(false),
+            enable_thinking: Some(enable_thinking),
         }
     }
 
     /// Admin smoke test: keep small and fast.
-    pub fn admin_test() -> Self {
+    pub fn admin_test(enable_thinking: bool) -> Self {
         Self {
             max_tokens: Some(128),
             temperature: Some(0.3),
-            enable_thinking: Some(false),
+            enable_thinking: Some(enable_thinking),
         }
     }
+}
+
+/// Event streamed back to the caller while the LLM generates.
+#[derive(Debug, Clone)]
+pub enum LlmStreamEvent {
+    /// Reasoning / CoT delta (models with `enable_thinking`).
+    Thinking(String),
+    /// Visible answer delta.
+    Content(String),
+    /// Final completion with usage stats (after all Content deltas).
+    Done(LlmCompletion),
+    /// Fatal error; no further events follow.
+    Error(String),
+}
+
+/// Handle to an in-flight streaming completion.
+pub struct LlmStream {
+    pub rx: mpsc::Receiver<LlmStreamEvent>,
 }
 
 #[async_trait]
@@ -82,6 +103,10 @@ pub trait LlmClient: Send + Sync {
         messages: &[ChatMessage],
         opts: CompleteOptions,
     ) -> anyhow::Result<LlmCompletion>;
+
+    /// Start a streaming completion. The returned handle yields Thinking/Content
+    /// deltas and finally a Done event with the full completion.
+    fn stream(&self, messages: Vec<ChatMessage>, opts: CompleteOptions) -> LlmStream;
 
     fn model_name(&self) -> &str;
     fn kind(&self) -> &'static str;
@@ -118,6 +143,36 @@ impl LlmClient for FallbackLlmClient {
             latency_ms: started.elapsed().as_millis() as i64,
             used_fallback: true,
         })
+    }
+
+    fn stream(&self, messages: Vec<ChatMessage>, _opts: CompleteOptions) -> LlmStream {
+        let model = self.model.clone();
+        let (tx, rx) = mpsc::channel(32);
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let content = fallback_reply(&messages);
+            let prompt_tokens = estimate_tokens(
+                &messages
+                    .iter()
+                    .map(|m| m.content.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+            let completion_tokens = estimate_tokens(&content);
+            let _ = tx.send(LlmStreamEvent::Content(content.clone())).await;
+            let _ = tx
+                .send(LlmStreamEvent::Done(LlmCompletion {
+                    content,
+                    model,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens: prompt_tokens + completion_tokens,
+                    latency_ms: started.elapsed().as_millis() as i64,
+                    used_fallback: true,
+                }))
+                .await;
+        });
+        LlmStream { rx }
     }
 
     fn model_name(&self) -> &str {
@@ -181,6 +236,26 @@ pub fn build_chat_body(
         body["enable_thinking"] = serde_json::json!(thinking);
     }
     body
+}
+
+/// Streaming variant: asks the gateway to emit SSE deltas (with usage at the end).
+pub fn build_stream_body(
+    model: &str,
+    messages: &[ChatMessage],
+    opts: &CompleteOptions,
+) -> serde_json::Value {
+    let mut body = build_chat_body(model, messages, opts);
+    body["stream"] = serde_json::json!(true);
+    body["stream_options"] = serde_json::json!({ "include_usage": true });
+    body
+}
+
+/// Some DashScope reasoning models only accept `enable_thinking: true` and
+/// reject `false` with HTTP 400. Force it as a fallback for those models.
+pub fn force_thinking_body(body: &serde_json::Value) -> serde_json::Value {
+    let mut b = body.clone();
+    b["enable_thinking"] = serde_json::json!(true);
+    b
 }
 
 /// Extract assistant text from OpenAI-compatible JSON, including Qwen reasoning models.
@@ -271,16 +346,32 @@ impl LlmClient for OpenAiCompatibleClient {
         let url = format!("{}/chat/completions", normalize_api_base(&self.base));
         let body = build_chat_body(&self.model, messages, &opts);
 
-        // One retry on transient network / 429 / 5xx only (not on long slow success).
+        // One retry on transient network / 429 / 5xx only (not on long slow success),
+        // plus a single forced `enable_thinking=true` retry for reasoning-only models.
         let mut last_err = None;
+        let mut forced_thinking = false;
         for attempt in 0..2 {
             if attempt > 0 {
                 tokio::time::sleep(Duration::from_millis(300 * attempt as u64)).await;
             }
-            match self.do_request(&url, &body, started).await {
+            let current_body = if forced_thinking {
+                force_thinking_body(&body)
+            } else {
+                body.clone()
+            };
+            match self.do_request(&url, &current_body, started).await {
                 Ok(c) => return Ok(c),
                 Err(e) => {
                     let msg = e.to_string();
+                    if !forced_thinking
+                        && opts.enable_thinking == Some(false)
+                        && msg.contains("enable_thinking")
+                    {
+                        tracing::warn!("model requires enable_thinking=true; retrying forced");
+                        forced_thinking = true;
+                        last_err = Some(e);
+                        continue;
+                    }
                     let retryable = msg.contains("429")
                         || msg.contains("500")
                         || msg.contains("502")
@@ -300,12 +391,189 @@ impl LlmClient for OpenAiCompatibleClient {
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("LLM request failed")))
     }
 
+    fn stream(&self, messages: Vec<ChatMessage>, opts: CompleteOptions) -> LlmStream {
+        let http = self.http.clone();
+        let base = self.base.clone();
+        let api_key = self.api_key.clone();
+        let model = self.model.clone();
+        let url = format!("{}/chat/completions", normalize_api_base(&base));
+        let body = build_stream_body(&model, &messages, &opts);
+        let (tx, rx) = mpsc::channel(64);
+        tokio::spawn(async move {
+            if let Err(e) = stream_chat_completions(http, &url, &api_key, body, model, tx.clone())
+                .await
+            {
+                let _ = tx.send(LlmStreamEvent::Error(e.to_string())).await;
+            }
+        });
+        LlmStream { rx }
+    }
+
     fn model_name(&self) -> &str {
         &self.model
     }
 
     fn kind(&self) -> &'static str {
         "openai_compatible"
+    }
+}
+
+/// Read an OpenAI-compatible SSE stream, forwarding Thinking/Content deltas and a final Done.
+/// Reasoning-only models reject `enable_thinking: false`; retry once forced in that case.
+async fn stream_chat_completions(
+    http: reqwest::Client,
+    url: &str,
+    api_key: &str,
+    body: serde_json::Value,
+    default_model: String,
+    tx: mpsc::Sender<LlmStreamEvent>,
+) -> anyhow::Result<()> {
+    let mut current_body = body;
+    loop {
+        match stream_attempt(&http, url, api_key, &current_body, &default_model, &tx).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let msg = e.to_string();
+                if current_body.get("enable_thinking").and_then(|v| v.as_bool()) == Some(false)
+                    && msg.contains("enable_thinking")
+                {
+                    tracing::warn!("model requires enable_thinking=true; retrying stream forced");
+                    current_body = force_thinking_body(&current_body);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+}
+
+async fn stream_attempt(
+    http: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    body: &serde_json::Value,
+    default_model: &str,
+    tx: &mpsc::Sender<LlmStreamEvent>,
+) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let resp = http
+        .post(url)
+        .bearer_auth(api_key)
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("LLM stream transport error calling {url}: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        let snippet: String = text.chars().take(500).collect();
+        return Err(anyhow::anyhow!("LLM stream HTTP {status} from {url}: {snippet}"));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut content_parts: Vec<String> = Vec::new();
+    let mut model = default_model.to_string();
+    let mut usage: Option<(i32, i32, i32)> = None;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| anyhow::anyhow!("LLM stream read failed: {e}"))?;
+        buffer.extend_from_slice(&chunk);
+        // Consume complete "\n\n"-delimited SSE frames (dashscope/openai both use "\n\n").
+        loop {
+            let Some(end) = buffer.windows(2).position(|w| w == b"\n\n") else {
+                break;
+            };
+            let end = end + 2;
+            let frame: Vec<u8> = buffer[..end].to_vec();
+            buffer.drain(..end);
+            parse_sse_frame(&frame, &mut model, &mut usage, &mut content_parts, tx).await;
+        }
+    }
+
+    // Anything left over from the last frame.
+    if !buffer.is_empty() {
+        parse_sse_frame(&buffer, &mut model, &mut usage, &mut content_parts, tx).await;
+    }
+
+    let content = content_parts.join("");
+    if content.trim().is_empty() {
+        return Err(anyhow::anyhow!("LLM stream ended with empty content"));
+    }
+    let (prompt_tokens, completion_tokens, total_tokens) = match usage {
+        Some(u) => u,
+        None => {
+            let p = estimate_tokens(&serde_json::to_string(body).unwrap_or_default());
+            let c = estimate_tokens(&content);
+            (p, c, p + c)
+        }
+    };
+
+    tx.send(LlmStreamEvent::Done(LlmCompletion {
+        content,
+        model,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        latency_ms: started.elapsed().as_millis() as i64,
+        used_fallback: false,
+    }))
+    .await
+    .map_err(|_| anyhow::anyhow!("LLM stream consumer dropped"))?;
+    Ok(())
+}
+
+async fn parse_sse_frame(
+    frame: &[u8],
+    model: &mut String,
+    usage: &mut Option<(i32, i32, i32)>,
+    content_parts: &mut Vec<String>,
+    tx: &mpsc::Sender<LlmStreamEvent>,
+) {
+    let frame_str = String::from_utf8_lossy(frame);
+    for line in frame_str.lines() {
+        let line = line.trim();
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim();
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+        let value: serde_json::Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(delta) = value.pointer("/choices/0/delta") {
+            if let Some(t) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
+                if !t.is_empty() {
+                    let _ = tx.send(LlmStreamEvent::Thinking(t.to_string())).await;
+                }
+            }
+            if let Some(t) = delta.get("content").and_then(|v| v.as_str()) {
+                if !t.is_empty() {
+                    content_parts.push(t.to_string());
+                    let _ = tx.send(LlmStreamEvent::Content(t.to_string())).await;
+                }
+            }
+        }
+        if let Some(m) = value.get("model").and_then(|v| v.as_str()) {
+            if !m.is_empty() {
+                *model = m.to_string();
+            }
+        }
+        if let Some(u) = value.pointer("/usage") {
+            *usage = Some((
+                u.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                u.get("completion_tokens")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i32,
+                u.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+            ));
+        }
     }
 }
 
@@ -481,10 +749,26 @@ mod tests {
             role: "user".into(),
             content: "你好".into(),
         }];
-        let body = build_chat_body("qwen3.6-max-preview", &msgs, &CompleteOptions::interview());
+        let body = build_chat_body(
+            "qwen3.6-max-preview",
+            &msgs,
+            &CompleteOptions::interview(false),
+        );
         assert_eq!(body["max_tokens"], 256);
         assert_eq!(body["enable_thinking"], false);
         assert_eq!(body["model"], "qwen3.6-max-preview");
+    }
+
+    #[test]
+    fn interview_thinking_raises_cap_and_enables() {
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: "你好".into(),
+        }];
+        let body =
+            build_chat_body("qwen3.6-max-preview", &msgs, &CompleteOptions::interview(true));
+        assert_eq!(body["max_tokens"], 2048);
+        assert_eq!(body["enable_thinking"], true);
     }
 
     #[test]
@@ -493,8 +777,62 @@ mod tests {
             role: "user".into(),
             content: "写章节".into(),
         }];
-        let body = build_chat_body("qwen3.6-max-preview", &msgs, &CompleteOptions::chapter());
+        let body = build_chat_body(
+            "qwen3.6-max-preview",
+            &msgs,
+            &CompleteOptions::chapter(false),
+        );
         assert_eq!(body["max_tokens"], 2048);
         assert_eq!(body["enable_thinking"], false);
+    }
+
+    #[test]
+    fn stream_body_sets_stream_flags() {
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: "你好".into(),
+        }];
+        let body =
+            build_stream_body("qwen3.6-max-preview", &msgs, &CompleteOptions::interview(true));
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["stream_options"]["include_usage"], true);
+        assert_eq!(body["enable_thinking"], true);
+    }
+
+    #[test]
+    fn force_thinking_overrides_false() {
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: "你好".into(),
+        }];
+        let body = build_chat_body(
+            "qwen3.6-max-preview",
+            &msgs,
+            &CompleteOptions::interview(false),
+        );
+        assert_eq!(body["enable_thinking"], false);
+        let forced = force_thinking_body(&body);
+        assert_eq!(forced["enable_thinking"], true);
+    }
+
+    #[test]
+    fn parse_reasoning_and_content_sse() {
+        let frame = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"先想\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"然后答\"}}]}\n\n"
+            .as_bytes();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut model = "m".to_string();
+        let mut usage = None;
+        let mut parts = Vec::new();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            parse_sse_frame(frame, &mut model, &mut usage, &mut parts, &tx).await;
+            assert_eq!(model, "m");
+            assert_eq!(parts, vec!["然后答".to_string()]);
+            assert!(matches!(rx.try_recv(), Ok(LlmStreamEvent::Thinking(t)) if t == "先想"));
+            assert!(matches!(rx.try_recv(), Ok(LlmStreamEvent::Content(t)) if t == "然后答"));
+        });
     }
 }

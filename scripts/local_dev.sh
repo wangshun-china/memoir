@@ -3,6 +3,8 @@
 #
 #   ./scripts/local_dev.sh start|rebuild  → miniprogram-env local
 #   ./scripts/local_dev.sh stop           → miniprogram-env stop  (both sides)
+#   ./scripts/local_dev.sh local-stop     → miniprogram-env local stop
+#   ./scripts/local_dev.sh remote-stop    → miniprogram-env remote stop
 #   ./scripts/local_dev.sh status|logs    → local-only helpers
 #   ./scripts/local_dev.sh remote         → miniprogram-env remote
 
@@ -25,8 +27,14 @@ case "$COMMAND" in
   start|rebuild|local)
     exec bash "$ENV_SCRIPT" local
     ;;
+  local-stop)
+    exec bash "$ENV_SCRIPT" local stop
+    ;;
   remote)
     exec bash "$ENV_SCRIPT" remote
+    ;;
+  remote-stop)
+    exec bash "$ENV_SCRIPT" remote stop
     ;;
   stop)
     exec bash "$ENV_SCRIPT" stop
@@ -45,15 +53,17 @@ case "$COMMAND" in
     ;;
   *)
     cat >&2 <<'EOF'
-Usage: scripts/local_dev.sh {start|rebuild|stop|status|logs|remote}
+Usage: scripts/local_dev.sh {start|rebuild|stop|status|logs|remote|local-stop|remote-stop}
 
-  start|rebuild  Start local stack, stop remote, point mini-program to local
-  remote         Start remote stack, stop local, point mini-program to remote
-  stop           Stop local AND remote containers
+  start|rebuild  Start local (skip if up), stop remote, env → local
+  local-stop     Stop local only
+  remote         Start remote (skip if up), stop local, env → remote
+  remote-stop    Stop remote only
+  stop           Stop local AND remote
   status         Show both stacks + env.ts
   logs           Tail local memoir-api logs
 
-Preferred alias: ./scripts/miniprogram-env.sh {local|remote|stop|status}
+Preferred: ./scripts/miniprogram-env.sh local|local stop|remote|remote stop|stop|status
 EOF
     exit 1
     ;;

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/env'
+import { Utf8Decoder } from '../utils/sse'
 
 const TOKEN_KEY = 'memoir_token'
 const USER_KEY = 'memoir_user'
@@ -195,6 +196,7 @@ export interface AdminOverview {
     model: string
     mode: string
     has_live_client: boolean
+    enable_thinking: boolean
   }
 }
 
@@ -241,6 +243,7 @@ export async function adminPutAiConfig(data: {
   api_key?: string
   model?: string
   clear_api_key?: boolean
+  enable_thinking?: boolean
 }): Promise<AdminOverview['ai']> {
   return request({ path: '/admin/ai-config', method: 'PUT', data })
 }
@@ -257,6 +260,20 @@ export async function adminTestAi(prompt?: string): Promise<{
     method: 'POST',
     data: { prompt: prompt || '请用一句话自我介绍你是回忆录采访助手。' },
     timeout: 60000,
+  })
+}
+
+export async function adminBindWechat(code: string): Promise<{
+  bound: boolean
+  user_id: string
+  openid_masked: string
+  promoted: boolean
+}> {
+  return request({
+    path: '/admin/bind-wechat',
+    method: 'POST',
+    data: { code },
+    timeout: 30000,
   })
 }
 
@@ -499,6 +516,120 @@ export function postMessage(
   })
 }
 
+export interface StreamCallbacks {
+  onThinking?: (text: string) => void
+  onContent?: (text: string) => void
+}
+
+interface StreamEventPayload {
+  kind: 'thinking' | 'content' | 'done' | 'error'
+  text?: string
+  message?: string
+  response?: PostMessageResult
+}
+
+/**
+ * Stream a message to the interviewer over SSE (`POST .../messages/stream`).
+ * The server emits `data: {kind:...}` frames: thinking → content → done.
+ * Resolves with the same `PostMessageResult` as `postMessage` once the server
+ * persists the assistant reply. Falls back to parsing the full body when the
+ * base library does not support `enableChunked`.
+ */
+export function postMessageStream(
+  sessionId: string,
+  content: string,
+  action: 'normal' | 'dont_know' | 'change_question' | 'prefer_not' = 'normal',
+  callbacks?: StreamCallbacks,
+): Promise<PostMessageResult> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const done = (result: PostMessageResult) => {
+      if (!settled) {
+        settled = true
+        resolve(result)
+      }
+    }
+    const fail = (err: Error) => {
+      if (!settled) {
+        settled = true
+        reject(err)
+      }
+    }
+
+    // Buffer persists across TCP chunks; SSE frames are "\n\n"-delimited.
+    let buffer = ''
+    const handleText = (text: string) => {
+      buffer += text
+      let idx = buffer.indexOf('\n\n')
+      while (idx >= 0) {
+        const frame = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        const line = frame.split('\n').find((l) => l.trim().startsWith('data:'))
+        if (line) {
+          const payload = line.slice(5).trim()
+          if (payload && payload !== '[DONE]') {
+            let evt: StreamEventPayload
+            try {
+              evt = JSON.parse(payload)
+            } catch {
+              // Incomplete JSON frame — skip; next chunk may complete it.
+              idx = buffer.indexOf('\n\n')
+              continue
+            }
+            if (evt.kind === 'thinking' && evt.text && callbacks && callbacks.onThinking) {
+              callbacks.onThinking(evt.text)
+            } else if (evt.kind === 'content' && evt.text && callbacks && callbacks.onContent) {
+              callbacks.onContent(evt.text)
+            } else if (evt.kind === 'done' && evt.response) {
+              done(evt.response)
+              return
+            } else if (evt.kind === 'error') {
+              fail(new Error(evt.message || 'stream error'))
+              return
+            }
+          }
+        }
+        idx = buffer.indexOf('\n\n')
+      }
+    }
+
+    const token = getToken()
+    const header: Record<string, string> = {
+      'content-type': 'application/json',
+      Accept: 'text/event-stream',
+    }
+    if (token) header.Authorization = `Bearer ${token}`
+
+    const task = wx.request({
+      url: `${API_BASE_URL}/interviews/${sessionId}/messages/stream`,
+      method: 'POST',
+      data: { content, action },
+      header,
+      enableChunked: true,
+      success(res) {
+        // Older base libs ignore enableChunked; the full SSE body arrives here.
+        if (!settled && typeof res.data === 'string') {
+          handleText(res.data)
+        }
+      },
+      fail(err) {
+        fail(new Error(err.errMsg || 'network error'))
+      },
+    })
+
+    const chunked = task as WechatMiniprogram.RequestTask & {
+      onChunkReceived?: (cb: (res: { data: ArrayBuffer }) => void) => void
+    }
+    if (chunked && typeof chunked.onChunkReceived === 'function') {
+      const decoder = new Utf8Decoder()
+      chunked.onChunkReceived((res: { data: ArrayBuffer }) => {
+        const u8 = new Uint8Array(res.data)
+        handleText(decoder.push(u8))
+      })
+    }
+  })
+}
+
 export function finishInterview(sessionId: string) {
   return request<InterviewSession>({
     path: `/interviews/${sessionId}/finish`,
@@ -511,6 +642,76 @@ export function finishInterview(sessionId: string) {
 export function generateChapter(sessionId: string) {
   return request<GeneratedChapter>({
     path: `/interviews/${sessionId}/generate`,
+    method: 'POST',
+    data: {},
+    timeout: 120000,
+  })
+}
+
+export interface StoryCard {
+  id: string
+  memoir_id: string
+  session_id?: string
+  title: string
+  summary: string
+  narrative: string
+  life_stage?: string
+  time_text?: string
+  year_start?: number
+  year_end?: number
+  time_precision: 'exact' | 'approximate' | 'range' | 'unknown' | string
+  location_text?: string
+  people: string[]
+  themes: string[]
+  emotions: string[]
+  missing_details: string[]
+  primary_chapter_id?: string
+  primary_chapter_title?: string
+  status: 'draft' | 'confirmed' | string
+  source_count: number
+}
+
+export interface TimelineEvent {
+  story_id: string
+  title: string
+  time_text?: string
+  year_start?: number
+  year_end?: number
+  time_precision: string
+  summary: string
+}
+
+export interface OrganizeResult {
+  timeline: TimelineEvent[]
+  chapters: Chapter[]
+  story_count: number
+}
+
+/** Turn one short interview into an idempotent, source-linked story card. */
+export function extractStory(sessionId: string) {
+  return request<StoryCard>({
+    path: `/interviews/${sessionId}/stories`,
+    method: 'POST',
+    data: {},
+    timeout: 120000,
+  })
+}
+
+export function listStories(memoirId: string) {
+  return request<StoryCard[]>({ path: `/memoirs/${memoirId}/stories` })
+}
+
+export function confirmStory(storyId: string) {
+  return request<StoryCard>({
+    path: `/stories/${storyId}/confirm`,
+    method: 'POST',
+    data: {},
+  })
+}
+
+export function organizeStories(memoirId: string) {
+  return request<OrganizeResult>({
+    path: `/memoirs/${memoirId}/organize`,
     method: 'POST',
     data: {},
     timeout: 120000,

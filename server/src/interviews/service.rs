@@ -1,15 +1,65 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::llm::client::{CompleteOptions, LlmStreamEvent};
 use crate::llm::{chapter as chapter_llm, interviewer};
 use crate::memoirs::service::{get_memoir, Chapter};
 use crate::state::AppState;
 
 /// User turns (role=user) that trigger automatic chapter generation.
 pub const AUTO_GENERATE_USER_TURNS: i64 = 20;
+
+const FREE_OPENING_QUESTIONS: &[(&str, &str)] = &[
+    (
+        "free_childhood_place",
+        "小时候最熟悉的一个地方是什么？那里有什么一直记到现在？",
+    ),
+    (
+        "free_family_person",
+        "家里哪位长辈最影响您？先讲一件和他有关的小事吧。",
+    ),
+    (
+        "free_school_object",
+        "上学时有没有一件舍不得丢的东西？它有什么来历？",
+    ),
+    (
+        "free_first_job",
+        "第一次靠自己挣到钱时，您还记得做的是什么吗？",
+    ),
+    (
+        "free_food",
+        "有没有一种味道，一闻到就会想起从前的家或某个人？",
+    ),
+    (
+        "free_turning_point",
+        "人生里哪次决定看起来很小，后来却改变了很多事情？",
+    ),
+    (
+        "free_festival",
+        "从前家里过年或过节，有什么现在已经不常见的习惯？",
+    ),
+    (
+        "free_journey",
+        "第一次离开家去很远的地方，是为什么，又看到了什么？",
+    ),
+    ("free_friend", "年轻时有没有一位多年不见却一直记得的朋友？"),
+    (
+        "free_hard_time",
+        "日子最难的时候，家里人是怎么一起熬过来的？",
+    ),
+    (
+        "free_proud",
+        "这一生有没有哪件事，让您现在想起来仍觉得很自豪？",
+    ),
+    (
+        "free_message",
+        "如果把一句话留给晚辈，您最希望他们记住什么？",
+    ),
+];
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct InterviewSession {
@@ -51,7 +101,7 @@ pub struct PostMessageRequest {
     pub action: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GeneratedChapter {
     pub chapter: Chapter,
     pub session_summary: Option<String>,
@@ -59,7 +109,7 @@ pub struct GeneratedChapter {
     pub user_turn_count: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PostMessageResponse {
     pub user_message: InterviewMessage,
     pub assistant_message: Option<InterviewMessage>,
@@ -80,6 +130,16 @@ pub struct CreateSessionResponse {
     pub resumed: bool,
     pub user_turn_count: i64,
     pub auto_generate_at: i64,
+}
+
+/// SSE payloads emitted by the streaming interview endpoint.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum StreamEvent {
+    Thinking { text: String },
+    Content { text: String },
+    Done { response: PostMessageResponse },
+    Error { message: String },
 }
 
 pub async fn create_session(
@@ -168,15 +228,30 @@ pub async fn create_session(
     .fetch_one(pool)
     .await?;
 
-    let opening = format!(
-        "您好{}。我们今天聊聊「{}」。{}",
-        preferred_address(&memoir.preferred_name, &memoir.subject_name),
-        topic,
-        opening_hook_for_topic(&topic)
-    );
+    let (opening, opening_type) = if topic == "自由回忆" {
+        let (question_type, question) = choose_free_opening(pool, memoir_id).await?;
+        (
+            format!(
+                "您好{}。今天不用按章节，想到哪里说到哪里。{}",
+                preferred_address(&memoir.preferred_name, &memoir.subject_name),
+                question
+            ),
+            question_type,
+        )
+    } else {
+        (
+            format!(
+                "您好{}。我们今天聊聊「{}」。{}",
+                preferred_address(&memoir.preferred_name, &memoir.subject_name),
+                topic,
+                opening_hook_for_topic(&topic)
+            ),
+            "opening",
+        )
+    };
 
     let assistant =
-        insert_message(pool, session.id, "assistant", &opening, Some("opening")).await?;
+        insert_message(pool, session.id, "assistant", &opening, Some(opening_type)).await?;
 
     // Mark chapter as collecting when interview starts.
     if let Some(cid) = chapter_id {
@@ -200,6 +275,49 @@ pub async fn create_session(
         user_turn_count: 0,
         auto_generate_at: AUTO_GENERATE_USER_TURNS,
     })
+}
+
+/// Pick the least-used prompt category. Ties rotate deterministically so the
+/// result varies without requiring random state or repeating recent prompts.
+async fn choose_free_opening(
+    pool: &PgPool,
+    memoir_id: Uuid,
+) -> AppResult<(&'static str, &'static str)> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT im.question_type, COUNT(*)::bigint
+        FROM interview_messages im
+        JOIN interview_sessions s ON s.id = im.session_id
+        WHERE s.memoir_id = $1 AND im.question_type LIKE 'free_%'
+        GROUP BY im.question_type
+        "#,
+    )
+    .bind(memoir_id)
+    .fetch_all(pool)
+    .await?;
+    let total: i64 = rows.iter().map(|(_, count)| *count).sum();
+    let min_count = FREE_OPENING_QUESTIONS
+        .iter()
+        .map(|(kind, _)| {
+            rows.iter()
+                .find(|(known, _)| known == kind)
+                .map(|(_, count)| *count)
+                .unwrap_or(0)
+        })
+        .min()
+        .unwrap_or(0);
+    let candidates: Vec<_> = FREE_OPENING_QUESTIONS
+        .iter()
+        .copied()
+        .filter(|(kind, _)| {
+            rows.iter()
+                .find(|(known, _)| known == kind)
+                .map(|(_, count)| *count)
+                .unwrap_or(0)
+                == min_count
+        })
+        .collect();
+    Ok(candidates[(total as usize) % candidates.len()])
 }
 
 /// Prefer active session for topic, then any active on memoir, then latest session overall.
@@ -495,9 +613,9 @@ pub async fn post_message(
     let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
 
     // 2) Call interviewer skill without holding a DB connection.
-    let client = {
+    let (client, enable_thinking) = {
         let runtime = state.llm_runtime.read().await;
-        runtime.client.clone()
+        (runtime.client.clone(), runtime.enable_thinking)
     };
     let completion = match interviewer::next_question(
         client.as_ref(),
@@ -505,6 +623,7 @@ pub async fn post_message(
         &memoir.subject_name,
         &history,
         &llm_user_text,
+        enable_thinking,
     )
     .await
     {
@@ -580,7 +699,7 @@ pub async fn post_message(
     // 4) Auto-generate in background when threshold reached (do not block chat reply).
     let mut generation_started = false;
     let mut generation_status = session.generation_status.clone();
-    if turns >= AUTO_GENERATE_USER_TURNS {
+    if turns >= AUTO_GENERATE_USER_TURNS && session.chapter_id.is_some() {
         if claim_generation_slot(&state.pool, session_id, true).await? {
             generation_started = true;
             generation_status = "generating".into();
@@ -608,6 +727,213 @@ pub async fn post_message(
         generation_started,
         generation_status,
     })
+}
+
+/// Streaming variant of `post_message`: persists the user turn, then streams
+/// LLM thinking/answer deltas via the returned channel, persisting the assistant
+/// turn once the stream finishes. The final `StreamEvent::Done` carries the same
+/// shape as `PostMessageResponse`.
+pub async fn stream_post_message(
+    state: &AppState,
+    user_id: Uuid,
+    session_id: Uuid,
+    req: PostMessageRequest,
+) -> AppResult<mpsc::Receiver<StreamEvent>> {
+    let session = get_session(&state.pool, user_id, session_id).await?;
+    if session.status != "active" {
+        return Err(AppError::Conflict("session is not active".into()));
+    }
+
+    let action = req.action.as_deref().unwrap_or("normal");
+    if action == "end" {
+        // End returns instantly — reuse the sync path and forward a single done event.
+        let resp = post_message(state, user_id, session_id, req).await?;
+        let (tx, rx) = mpsc::channel(1);
+        let _ = tx.send(StreamEvent::Done { response: resp }).await;
+        return Ok(rx);
+    }
+
+    let (stored_content, llm_user_text) = match action {
+        "dont_know" => (
+            "不知道怎么回答".to_string(),
+            "__skip_dont_know__".to_string(),
+        ),
+        "change_question" => (
+            "换一个问题".to_string(),
+            "__skip_change_question__".to_string(),
+        ),
+        "prefer_not" => (
+            "这个问题不想说".to_string(),
+            "__skip_prefer_not__".to_string(),
+        ),
+        _ => {
+            let c = req.content.trim();
+            if c.is_empty() {
+                return Err(AppError::BadRequest("content is required".into()));
+            }
+            if c.chars().count() > 4000 {
+                return Err(AppError::BadRequest("content too long".into()));
+            }
+            (c.to_string(), c.to_string())
+        }
+    };
+
+    // 1) Persist user turn first — same as sync path.
+    let user_message = insert_message(
+        &state.pool,
+        session_id,
+        "user",
+        &stored_content,
+        Some(action),
+    )
+    .await?;
+
+    let history = list_messages_recent(&state.pool, user_id, session_id, 16).await?;
+    let memoir = get_memoir(&state.pool, user_id, session.memoir_id).await?;
+
+    let (client, enable_thinking) = {
+        let runtime = state.llm_runtime.read().await;
+        (runtime.client.clone(), runtime.enable_thinking)
+    };
+
+    let llm_messages =
+        interviewer::build_interviewer_messages(&session.topic, &memoir.subject_name, &history, &llm_user_text);
+    let llm_stream = client.stream(llm_messages, CompleteOptions::interview(enable_thinking));
+
+    let (tx, rx) = mpsc::channel(128);
+    let state_bg = state.clone();
+    let client_model = client.model_name().to_string();
+    tokio::spawn(async move {
+        let mut content = String::new();
+        let mut completion: Option<crate::llm::client::LlmCompletion> = None;
+        let mut stream_error: Option<String> = None;
+
+        let mut llm_events = llm_stream.rx;
+        while let Some(evt) = llm_events.recv().await {
+            match evt {
+                LlmStreamEvent::Thinking(t) => {
+                    let _ = tx.send(StreamEvent::Thinking { text: t }).await;
+                }
+                LlmStreamEvent::Content(t) => {
+                    content.push_str(&t);
+                    let _ = tx.send(StreamEvent::Content { text: t }).await;
+                }
+                LlmStreamEvent::Done(c) => completion = Some(c),
+                LlmStreamEvent::Error(e) => stream_error = Some(e),
+            }
+        }
+
+        let soft_recovery = "刚才我这边信号不好，没听清。您能换个说法，再讲一遍刚才那件事吗？".to_string();
+        let (assistant_content, _used_completion) = match (completion, stream_error) {
+            (Some(c), _) => {
+                let _ = crate::settings::record_usage(
+                    &state_bg.pool,
+                    "interview",
+                    &c.model,
+                    c.prompt_tokens,
+                    c.completion_tokens,
+                    c.total_tokens,
+                    c.latency_ms,
+                    true,
+                    None,
+                )
+                .await;
+                (c.content.clone(), Some(c))
+            }
+            (None, Some(err)) => {
+                tracing::error!(error = %err, %session_id, "LLM stream failed during interview; using soft recovery reply");
+                let _ = crate::settings::record_usage(
+                    &state_bg.pool,
+                    "interview",
+                    &client_model,
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    Some(&err),
+                )
+                .await;
+                (soft_recovery, None)
+            }
+            (None, None) => {
+                tracing::error!(%session_id, "LLM stream ended without Done; using soft recovery reply");
+                (soft_recovery, None)
+            }
+        };
+
+        let assistant_message = match insert_message(
+            &state_bg.pool,
+            session_id,
+            "assistant",
+            &assistant_content,
+            Some("follow_up"),
+        )
+        .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                let _ = tx.send(StreamEvent::Error { message: format!("保存回复失败: {e}") }).await;
+                return;
+            }
+        };
+
+        // Mark chapter collecting once real dialogue exists.
+        if let Some(cid) = session.chapter_id {
+            let _ = sqlx::query(
+                r#"
+                UPDATE chapters
+                SET status = CASE WHEN status IN ('empty', 'collecting') THEN 'collecting' ELSE status END,
+                    updated_at = NOW()
+                WHERE id = $1
+                "#,
+            )
+            .bind(cid)
+            .execute(&state_bg.pool)
+            .await;
+        }
+
+        let turns = match count_user_turns(&state_bg.pool, session_id).await {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = tx.send(StreamEvent::Error { message: format!("统计对话失败: {e}") }).await;
+                return;
+            }
+        };
+
+        // Auto-generate in background when threshold reached (mirrors sync path).
+        let mut generation_started = false;
+        let mut generation_status = session.generation_status.clone();
+        if turns >= AUTO_GENERATE_USER_TURNS && session.chapter_id.is_some() {
+            if claim_generation_slot(&state_bg.pool, session_id, true).await.unwrap_or(false) {
+                generation_started = true;
+                generation_status = "generating".into();
+                let s2 = state_bg.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = generate_from_session(&s2, user_id, session_id, "auto").await {
+                        tracing::warn!(error = %e, %session_id, "async auto chapter generation failed");
+                        let _ = mark_generation_status(&s2.pool, session_id, "failed").await;
+                    }
+                });
+            } else if let Ok(sess) = get_session(&state_bg.pool, user_id, session_id).await {
+                generation_status = sess.generation_status;
+            }
+        }
+
+        let response = PostMessageResponse {
+            user_message,
+            assistant_message: Some(assistant_message),
+            session_status: "active".into(),
+            user_turn_count: turns,
+            auto_generate_at: AUTO_GENERATE_USER_TURNS,
+            generated: None,
+            generation_started,
+            generation_status,
+        };
+        let _ = tx.send(StreamEvent::Done { response }).await;
+    });
+
+    Ok(rx)
 }
 
 pub async fn finish_session(
@@ -710,9 +1036,9 @@ pub async fn generate_from_session(
         ));
     }
 
-    let client = {
+    let (client, enable_thinking) = {
         let runtime = state.llm_runtime.read().await;
-        runtime.client.clone()
+        (runtime.client.clone(), runtime.enable_thinking)
     };
 
     let draft = match chapter_llm::generate_chapter_draft(
@@ -720,6 +1046,7 @@ pub async fn generate_from_session(
         &session.topic,
         &memoir.subject_name,
         &history,
+        enable_thinking,
     )
     .await
     {

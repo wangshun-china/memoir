@@ -1,6 +1,7 @@
 import {
   adminAiConfig,
   adminAiUsage,
+  adminBindWechat,
   adminMemoirs,
   adminOverview,
   adminPutAiConfig,
@@ -29,10 +30,14 @@ Page({
     aiKeySet: false,
     aiKeyMasked: '',
     aiMode: '',
+    aiThinking: true,
     testPrompt: '请用一句话自我介绍你是回忆录采访助手。',
     testResult: '',
     testing: false,
     savingAi: false,
+    wechatBound: false,
+    wechatMasked: '',
+    bindingWechat: false,
     usageSummary: '',
     usageLines: [] as string[],
   },
@@ -58,9 +63,48 @@ Page({
         })
         return
       }
+      this.loadWechatBindState()
       await this.loadTab(this.data.tab)
     } catch (e: any) {
       this.setData({ loading: false, error: (e && e.message) || '加载失败' })
+    }
+  },
+
+  loadWechatBindState() {
+    const saved = wx.getStorageSync('memoir_admin_wechat') as { bound?: boolean; openid_masked?: string } | ''
+    if (saved && saved.bound) {
+      this.setData({ wechatBound: true, wechatMasked: saved.openid_masked || '' })
+    }
+  },
+
+  async onBindWechat() {
+    if (this.data.bindingWechat) return
+    this.setData({ bindingWechat: true, error: '' })
+    try {
+      const code = await new Promise<string>((resolve, reject) => {
+        wx.login({
+          success: (res) => {
+            if (res.code) resolve(res.code)
+            else reject(new Error('未获取到登录 code'))
+          },
+          fail: (err) => reject(new Error(err.errMsg || 'wx.login 调用失败')),
+        })
+      })
+      const r = await adminBindWechat(code)
+      wx.setStorageSync('memoir_admin_wechat', { bound: true, openid_masked: r.openid_masked })
+      this.setData({ bindingWechat: false, wechatBound: true, wechatMasked: r.openid_masked })
+      wx.showModal({
+        title: '绑定成功',
+        content: r.promoted
+          ? '该微信账号已提升为管理员。退出后点「微信一键登录」即可进入管理台。'
+          : '已绑定。退出后点「微信一键登录」即可进入管理台，不再依赖账号密码。',
+        showCancel: false,
+      })
+    } catch (e: any) {
+      this.setData({
+        bindingWechat: false,
+        error: (e && e.message) || '绑定失败',
+      })
     }
   },
 
@@ -100,6 +144,7 @@ Page({
           aiKeySet: !!ai.api_key_set,
           aiKeyMasked: ai.api_key_masked || '',
           aiMode: ai.mode || '',
+          aiThinking: ai.enable_thinking !== false,
           aiKey: '',
           usageSummary,
           usageLines: recent,
@@ -126,6 +171,9 @@ Page({
   onAiKey(e: WechatMiniprogram.Input) {
     this.setData({ aiKey: e.detail.value || '' })
   },
+  onAiThinking(e: WechatMiniprogram.SwitchChange) {
+    this.setData({ aiThinking: !!e.detail.value })
+  },
   onTestPrompt(e: WechatMiniprogram.Input) {
     this.setData({ testPrompt: e.detail.value || '' })
   },
@@ -133,9 +181,10 @@ Page({
   async onSaveAi() {
     this.setData({ savingAi: true, error: '' })
     try {
-      const data: { api_base?: string; model?: string; api_key?: string } = {
+      const data: { api_base?: string; model?: string; api_key?: string; enable_thinking?: boolean } = {
         api_base: (this.data.aiBase || '').trim(),
         model: (this.data.aiModel || '').trim(),
+        enable_thinking: !!this.data.aiThinking,
       }
       const key = (this.data.aiKey || '').trim()
       if (key) data.api_key = key
@@ -146,6 +195,7 @@ Page({
         aiKeySet: !!ai.api_key_set,
         aiKeyMasked: ai.api_key_masked || '',
         aiMode: ai.mode || '',
+        aiThinking: ai.enable_thinking !== false,
       })
       wx.showToast({ title: '已保存', icon: 'success' })
     } catch (e: any) {

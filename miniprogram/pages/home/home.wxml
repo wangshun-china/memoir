@@ -1,4 +1,4 @@
-<navigation-bar title="回忆录" back="{{false}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="回忆录" back="{{false}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view class="hero-card">
@@ -86,6 +86,27 @@
   </view>
 
   <block wx:else>
+    <view wx:if="{{needProfile}}" class="profile-setup card-surface">
+      <text class="setup-title">完善你的资料</text>
+      <text class="setup-hint">微信需要你确认一次头像和昵称，之后会自动带出。</text>
+      <view class="setup-row">
+        <button class="setup-avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <image wx:if="{{profileAvatarUrl}}" class="setup-avatar-img" src="{{profileAvatarUrl}}" mode="aspectFill" />
+          <view wx:else class="setup-avatar-ph">{{profileNickname ? profileNickname[0] : '微'}}</view>
+        </button>
+        <input
+          class="setup-nickname"
+          type="nickname"
+          placeholder="点击填写微信昵称"
+          value="{{profileNickname}}"
+          maxlength="32"
+          bindinput="onProfileNickname"
+        />
+      </view>
+      <button class="btn-primary setup-save" loading="{{savingProfile}}" bindtap="onSaveProfile">保存资料</button>
+      <text class="setup-skip" bindtap="onSkipProfile">跳过，以后再说</text>
+    </view>
+
     <view class="toolbar">
       <button class="btn-primary create-btn" bindtap="onCreate">＋ 创建一本回忆录</button>
     </view>

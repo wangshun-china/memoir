@@ -1,6 +1,6 @@
 .page {
   min-height: 100vh;
-  padding: 12rpx 0 0;
+  padding: 16rpx 0 0;
   background: var(--bg);
   box-sizing: border-box;
   display: flex;
@@ -9,7 +9,7 @@
 }
 
 .header {
-  padding: 8rpx 28rpx 12rpx;
+  padding: 12rpx 28rpx 16rpx;
   flex-shrink: 0;
   display: flex;
   align-items: flex-start;
@@ -24,16 +24,18 @@
 
 .title {
   display: block;
-  font-size: 36rpx;
+  font-size: 38rpx;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--brand-deep);
+  letter-spacing: 2rpx;
 }
 
 .meta {
   display: block;
-  margin-top: 6rpx;
+  margin-top: 8rpx;
   font-size: 24rpx;
   color: var(--muted);
+  letter-spacing: 1rpx;
 }
 
 .header-more {
@@ -47,13 +49,14 @@
 }
 
 .progress-line {
-  padding: 0 28rpx 10rpx;
+  padding: 0 28rpx 12rpx;
   flex-shrink: 0;
 }
 
 .progress-text {
   font-size: 22rpx;
   color: var(--muted-2);
+  letter-spacing: 1rpx;
 }
 
 .tabs {
@@ -65,24 +68,23 @@
 
 .tabs-inner {
   display: inline-flex;
-  padding: 14rpx 20rpx 16rpx;
-  gap: 12rpx;
+  padding: 16rpx 20rpx 18rpx;
+  gap: 14rpx;
 }
 
 .tab {
   display: inline-flex;
   flex-direction: column;
   min-width: 148rpx;
-  padding: 14rpx 18rpx;
-  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: var(--radius-sm);
   background: var(--bg-input);
   border: 1rpx solid var(--line);
 }
 
 .tab-on {
   background: var(--brand-soft);
-  border-color: #e8b48a;
-  box-shadow: 0 4rpx 12rpx rgba(196, 92, 38, 0.12);
+  border-color: var(--brand);
 }
 
 .tab.has-draft .tab-status {
@@ -93,26 +95,28 @@
   font-size: 26rpx;
   font-weight: 600;
   color: var(--ink);
+  letter-spacing: 1rpx;
 }
 
 .tab-status {
-  margin-top: 6rpx;
+  margin-top: 8rpx;
   font-size: 20rpx;
   color: var(--muted-2);
+  letter-spacing: 1rpx;
 }
 
 .body {
   flex: 1;
   height: 0;
-  padding: 20rpx 28rpx calc(40rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 28rpx calc(40rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
 .content-card.paper {
-  background: linear-gradient(180deg, #fffdf8 0%, #fbf6ec 100%);
+  background: var(--bg-elevated);
   border: 1rpx solid var(--line);
-  border-radius: 20rpx;
-  padding: 32rpx 28rpx 36rpx;
+  border-radius: var(--radius);
+  padding: 36rpx 32rpx 40rpx;
   box-shadow: var(--shadow-sm);
   position: relative;
 }
@@ -121,54 +125,58 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 24rpx;
-  bottom: 24rpx;
-  width: 6rpx;
-  border-radius: 0 6rpx 6rpx 0;
-  background: linear-gradient(180deg, #e8a878, var(--brand));
+  top: 28rpx;
+  bottom: 28rpx;
+  width: 4rpx;
+  border-radius: 0 4rpx 4rpx 0;
+  background: var(--brand);
 }
 
 .chapter-name {
   display: block;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 650;
-  color: var(--brand-deep);
-  margin-bottom: 16rpx;
-  padding-left: 12rpx;
+  color: var(--brand);
+  margin-bottom: 20rpx;
+  padding-left: 14rpx;
+  letter-spacing: 2rpx;
 }
 
 .content-text {
   font-size: 34rpx;
-  line-height: 1.85;
+  line-height: 2.0;
   color: var(--ink);
   white-space: pre-wrap;
-  padding-left: 12rpx;
+  padding-left: 14rpx;
+  letter-spacing: 1rpx;
 }
 
 .empty-card {
-  padding: 40rpx 28rpx;
+  padding: 48rpx 28rpx;
   text-align: center;
 }
 
 .empty-title {
   display: block;
-  font-size: 32rpx;
+  font-size: 34rpx;
   font-weight: 600;
   color: var(--ink);
+  letter-spacing: 1rpx;
 }
 
 .empty-desc {
   display: block;
-  margin: 14rpx 0 0;
+  margin: 16rpx 0 0;
   font-size: 28rpx;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.7;
+  letter-spacing: 1rpx;
 }
 
 .action-row {
   display: flex;
-  gap: 16rpx;
-  margin-top: 28rpx;
+  gap: 18rpx;
+  margin-top: 32rpx;
 }
 
 .action-half {
@@ -179,10 +187,16 @@
 
 .action-hint {
   display: block;
-  margin-top: 14rpx;
+  margin-top: 16rpx;
   text-align: center;
   font-size: 22rpx;
   color: var(--muted-2);
+  letter-spacing: 1rpx;
+}
+
+.storybox-btn {
+  width: 100%;
+  margin: 24rpx 0 0 !important;
 }
 
 .state {
@@ -190,6 +204,7 @@
   text-align: center;
   color: var(--muted);
   font-size: 30rpx;
+  letter-spacing: 1rpx;
 }
 
 .error {

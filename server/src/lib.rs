@@ -8,6 +8,7 @@ pub mod llm;
 pub mod memoirs;
 pub mod settings;
 pub mod state;
+pub mod stories;
 
 use std::sync::Arc;
 
@@ -33,6 +34,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(auth::router())
         .merge(memoirs::router())
         .merge(interviews::router())
+        .merge(stories::router())
         .merge(admin::router());
 
     // Admin UI lives in the miniprogram only (no web SPA).

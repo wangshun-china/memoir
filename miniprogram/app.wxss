@@ -1,33 +1,33 @@
-/** Global design tokens — 适老 · 家书暖色 */
+/** Global design tokens — 墨香雅韵 · 书卷气息 */
 page {
-  --brand: #c45c26;
-  --brand-deep: #9a3f14;
-  --brand-soft: #f3d7c4;
-  --brand-glow: rgba(196, 92, 38, 0.28);
-  --bg: #f4efe4;
-  --bg-elevated: #fffdf8;
-  --bg-input: #f7f1e7;
-  --ink: #2a2318;
-  --muted: #6f634f;
-  --muted-2: #8a7b66;
-  --line: #e6d9c4;
-  --line-soft: #efe6d8;
-  --danger: #a33;
-  --success: #3d6b3a;
-  --success-bg: #e8efdf;
-  --shadow: 0 10rpx 40rpx rgba(68, 42, 18, 0.08);
-  --shadow-sm: 0 6rpx 20rpx rgba(68, 42, 18, 0.06);
-  --radius: 24rpx;
-  --radius-lg: 28rpx;
-  --radius-sm: 16rpx;
+  --brand: #2D5A3D;
+  --brand-deep: #1E3D29;
+  --brand-soft: #E4EDE3;
+  --brand-glow: rgba(45, 90, 61, 0.15);
+  --bg: #F7F5EE;
+  --bg-elevated: #FDFCF9;
+  --bg-input: #F0EDE6;
+  --ink: #2B2B28;
+  --muted: #6B6B64;
+  --muted-2: #8F8F85;
+  --line: #E0DCD2;
+  --line-soft: #EDEAE2;
+  --danger: #8B3A3A;
+  --success: #3D6B4A;
+  --success-bg: #E8F0E6;
+  --shadow: 0 6rpx 32rpx rgba(45, 90, 61, 0.05);
+  --shadow-sm: 0 2rpx 12rpx rgba(45, 90, 61, 0.04);
+  --radius: 16rpx;
+  --radius-lg: 20rpx;
+  --radius-sm: 12rpx;
   --tap-min: 88rpx;
   --font-body: 34rpx;
-  --font-title: 40rpx;
+  --font-title: 42rpx;
   --font-small: 26rpx;
-  --lh: 1.6;
+  --lh: 1.75;
 
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
+  font-family: 'Songti SC', 'STSong', 'SimSun', 'Noto Serif SC', 'Source Han Serif SC',
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   color: var(--ink);
   background: var(--bg);
   font-size: var(--font-body);
@@ -35,16 +35,17 @@ page {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #d86a2f 0%, #c45c26 55%, #a84716 100%);
-  color: #fff;
+  background: linear-gradient(135deg, #3D6B4A 0%, #2D5A3D 55%, #1E3D29 100%);
+  color: #FDFCF9;
   font-size: 34rpx;
   font-weight: 600;
   min-height: var(--tap-min);
   line-height: var(--tap-min);
-  border-radius: 18rpx;
-  box-shadow: 0 12rpx 28rpx var(--brand-glow);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4rpx 16rpx var(--brand-glow);
   border: none;
-  padding: 0 28rpx;
+  padding: 0 32rpx;
+  letter-spacing: 2rpx;
 }
 
 .btn-primary::after {
@@ -52,18 +53,19 @@ page {
 }
 
 .btn-primary[disabled] {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .btn-secondary {
-  background: #efe4d4;
-  color: var(--ink);
+  background: var(--bg-elevated);
+  color: var(--brand);
   font-size: 30rpx;
   min-height: 80rpx;
   line-height: 80rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   border: 1rpx solid var(--line);
   padding: 0 24rpx;
+  letter-spacing: 1rpx;
 }
 
 .btn-secondary::after {
@@ -77,6 +79,7 @@ page {
   padding: 12rpx 8rpx;
   margin: 0;
   line-height: 1.4;
+  letter-spacing: 1rpx;
 }
 
 .btn-ghost::after {

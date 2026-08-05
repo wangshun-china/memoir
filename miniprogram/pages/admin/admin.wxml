@@ -1,4 +1,4 @@
-<navigation-bar title="管理" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="管理" back="{{true}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view class="tabs">
@@ -12,6 +12,16 @@
   <view wx:if="{{loading}}" class="state muted">加载中…</view>
 
   <block wx:elif="{{tab === 'overview' && overview}}">
+    <view wx:if="{{!wechatBound}}" class="card-surface wechat-card">
+      <text class="block-title">微信一键登录管理</text>
+      <text class="hint">绑定当前微信后，以后退出用「微信一键登录」即可进入管理台，不再需要账号密码。</text>
+      <button class="btn-secondary" loading="{{bindingWechat}}" bindtap="onBindWechat">绑定当前微信</button>
+    </view>
+    <view wx:else class="card-surface wechat-card">
+      <text class="block-title">微信登录已绑定</text>
+      <text class="line">已绑定微信：{{wechatMasked}}</text>
+      <text class="hint">退出后用「微信一键登录」即可进入管理台。</text>
+    </view>
     <view class="grid">
       <view class="stat card-surface">
         <text class="n">{{overview.users}}</text>
@@ -42,6 +52,7 @@
       <text class="block-title">AI 状态</text>
       <text class="line">模式：{{overview.ai.mode}}</text>
       <text class="line">模型：{{overview.ai.model}}</text>
+      <text class="line">思考模式：{{overview.ai.enable_thinking ? '开启' : '关闭'}}</text>
       <text class="line">成功率：{{overview.llm_success_rate}}</text>
       <text class="line">Key：{{overview.ai.api_key_set ? overview.ai.api_key_masked : '未配置'}}</text>
     </view>
@@ -79,6 +90,13 @@
       <input class="input" placeholder="API Base" value="{{aiBase}}" bindinput="onAiBase" />
       <input class="input" placeholder="Model" value="{{aiModel}}" bindinput="onAiModel" />
       <input class="input" password placeholder="API Key（留空不改）" value="{{aiKey}}" bindinput="onAiKey" />
+      <view class="thinking-row">
+        <view class="thinking-copy">
+          <text class="thinking-label">思考模式</text>
+          <text class="thinking-hint">开启后显示思考过程，回答更稳但稍慢</text>
+        </view>
+        <switch checked="{{aiThinking}}" bindchange="onAiThinking" color="#2D5A3D" />
+      </view>
       <button class="btn-primary" loading="{{savingAi}}" bindtap="onSaveAi">保存配置</button>
     </view>
     <view class="card-surface form">

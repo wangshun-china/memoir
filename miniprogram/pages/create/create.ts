@@ -67,16 +67,8 @@ Page({
         birth_place: (this._form.birthPlace || '').trim() || undefined,
         creator_relation: (this._form.relation || '').trim() || undefined,
       })
-      const firstChapter = memoir.chapters && memoir.chapters[0]
-      const chapterQ =
-        firstChapter && firstChapter.id ? '&chapterId=' + firstChapter.id : ''
       wx.redirectTo({
-        url:
-          '/pages/interview/interview?memoirId=' +
-          memoir.id +
-          '&mode=start&topic=' +
-          encodeURIComponent('童年与家庭') +
-          chapterQ,
+        url: '/pages/storybox/storybox?memoirId=' + memoir.id,
       })
     } catch (e: any) {
       const msg = e && e.message ? e.message : '创建失败'

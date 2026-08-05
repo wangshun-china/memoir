@@ -406,7 +406,11 @@ async fn upsert_user(
     Ok(row)
 }
 
-async fn exchange_wechat_code(app_id: &str, app_secret: &str, code: &str) -> AppResult<String> {
+pub(crate) async fn exchange_wechat_code(
+    app_id: &str,
+    app_secret: &str,
+    code: &str,
+) -> AppResult<String> {
     let url = format!(
         "https://api.weixin.qq.com/sns/jscode2session?appid={app_id}&secret={app_secret}&js_code={code}&grant_type=authorization_code"
     );

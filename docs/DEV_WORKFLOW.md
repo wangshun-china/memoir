@@ -33,9 +33,11 @@ curl -fsS http://127.0.0.1:18081/health
 ## 环境切换（唯一入口）
 
 ```bash
-./scripts/miniprogram-env.sh local   # 关远程 → 开本地 → env.ts=local
-./scripts/miniprogram-env.sh remote  # 关本地 → 开远程 → env.ts=remote
-./scripts/miniprogram-env.sh stop    # 本地+远程全部停
+./scripts/miniprogram-env.sh local          # 关远程 → 开本地(已开则跳过) → env.ts=local
+./scripts/miniprogram-env.sh local stop     # 只关本地
+./scripts/miniprogram-env.sh remote         # 关本地 → 开远程(已开则跳过) → env.ts=remote
+./scripts/miniprogram-env.sh remote stop    # 只关远程
+./scripts/miniprogram-env.sh stop           # 本地+远程全部停
 ./scripts/miniprogram-env.sh status
 ```
 
@@ -73,6 +75,7 @@ Runner 上。Actions 需要以下 GitHub Secrets：
 - `LLM_API_BASE`
 - `LLM_API_KEY`
 - `LLM_MODEL`
+- `LLM_ENABLE_THINKING`（变量，默认 `1`；`1` 开启模型思考/推理，`0` 关闭追求最快回复）
 - `WECHAT_APP_ID`
 - `WECHAT_APP_SECRET`
 - `ALIYUN_ACR_PASSWORD`

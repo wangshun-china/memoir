@@ -68,6 +68,19 @@
   margin-bottom: 16rpx;
 }
 
+.wechat-card {
+  padding: 28rpx;
+  margin-bottom: 16rpx;
+}
+
+.wechat-card .hint {
+  margin-bottom: 20rpx;
+}
+
+.wechat-card .btn-secondary {
+  width: 100%;
+}
+
 .block-title {
   display: block;
   font-size: 30rpx;
@@ -120,6 +133,33 @@
   padding: 20rpx 22rpx;
   font-size: 28rpx;
   margin-bottom: 14rpx;
+}
+
+.thinking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 8rpx 4rpx 20rpx;
+}
+
+.thinking-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.thinking-label {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+.thinking-hint {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--muted-2);
 }
 
 .form .btn-primary,

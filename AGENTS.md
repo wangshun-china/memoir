@@ -4,7 +4,7 @@
 
 1. **Never install PostgreSQL/MySQL/Redis on the Windows host.** Use **WSL Docker** only.
 2. Local DB: `docker compose -f docker-compose.dev.yml --env-file .env.development up -d` (port **5433**).
-3. Prefer unified env switch (WSL): `scripts/miniprogram-env.sh local|remote|stop|status`.
+3. Prefer unified env switch (WSL): `scripts/miniprogram-env.sh local|local stop|remote|remote stop|stop|status`.
    - `local` = stop remote containers + start local + mini-program local API
    - `remote` = stop local + start remote + mini-program `api.wangshun.work`
    - `stop` = stop both sides
@@ -22,7 +22,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **memoir** (950 symbols, 1706 relationships, 78 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **memoir** (1218 symbols, 2292 relationships, 101 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

@@ -193,6 +193,108 @@ async fn create_memoir_seeds_nine_default_chapters() {
 }
 
 #[tokio::test]
+async fn nonlinear_story_box_flow_is_traceable_and_organizable() {
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
+        return;
+    }
+    prepare_test_env();
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+    let openid = format!("test-story-box-{}", Uuid::new_v4());
+
+    let (status, auth) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/dev-login",
+        None,
+        Some(json!({ "nickname": "story_teller", "openid": openid })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "auth: {auth}");
+    let token = auth["token"].as_str().expect("token");
+    let user_id = Uuid::parse_str(auth["user_id"].as_str().unwrap()).unwrap();
+
+    let (status, memoir) = json_request(
+        &app,
+        "POST",
+        "/api/v1/memoirs",
+        Some(token),
+        Some(json!({ "subject_name": "故事测试者", "birth_year": 1950 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "memoir: {memoir}");
+    let memoir_id = memoir["id"].as_str().unwrap();
+
+    let (status, started) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/memoirs/{memoir_id}/interviews"),
+        Some(token),
+        Some(json!({ "topic": "自由回忆", "force_new": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start: {started}");
+    assert_eq!(started["session"]["topic"], "自由回忆");
+    let session_id = started["session"]["id"].as_str().unwrap();
+    assert!(started["opening_message"]["question_type"]
+        .as_str()
+        .unwrap()
+        .starts_with("free_"));
+
+    let (status, posted) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/interviews/{session_id}/messages"),
+        Some(token),
+        Some(json!({
+            "content": "我十岁左右住在河边，父亲每天骑一辆旧自行车送我去学校。",
+            "action": "normal"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "post: {posted}");
+
+    let story_uri = format!("/api/v1/interviews/{session_id}/stories");
+    let (status, story) = json_request(&app, "POST", &story_uri, Some(token), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "extract: {story}");
+    assert_eq!(story["status"], "draft");
+    assert!(story["source_count"].as_i64().unwrap_or(0) >= 3);
+    let story_id = story["id"].as_str().unwrap();
+
+    // Extraction is idempotent for a short interview session.
+    let (status, again) =
+        json_request(&app, "POST", &story_uri, Some(token), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "extract again: {again}");
+    assert_eq!(again["id"], story_id);
+
+    let (status, confirmed) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/stories/{story_id}/confirm"),
+        Some(token),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm: {confirmed}");
+    assert_eq!(confirmed["status"], "confirmed");
+
+    let (status, organized) = json_request(
+        &app,
+        "POST",
+        &format!("/api/v1/memoirs/{memoir_id}/organize"),
+        Some(token),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "organize: {organized}");
+    assert_eq!(organized["story_count"], 1);
+    assert_eq!(organized["timeline"].as_array().unwrap().len(), 1);
+    assert_eq!(organized["chapters"].as_array().unwrap().len(), 1);
+
+    cleanup_user(&state.pool, user_id).await;
+}
+
+#[tokio::test]
 async fn interview_message_round_trip_and_finish() {
     if !database_configured() {
         eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
@@ -675,4 +777,114 @@ async fn admin_setup_login_overview_and_ai_test() {
         .execute(&state.pool)
         .await
         .ok();
+}
+
+#[tokio::test]
+async fn admin_bind_wechat_promotes_wechat_login() {
+    if !database_configured() {
+        eprintln!("skip: DATABASE_URL/TEST_DATABASE_URL not set");
+        return;
+    }
+    prepare_test_env();
+    let (app, state) = memoir_server::app_from_env().await.expect("app");
+
+    // Create our own is_admin user (unique username) so this test does not race
+    // with other tests that mutate the shared wangshun / admin_accounts fixtures.
+    let uname = format!("adm_bind_{}", &Uuid::new_v4().to_string()[..8]);
+    let password = "BindPass9!";
+    let hash = memoir_server::admin::password::hash_password(password).expect("hash");
+    let (admin_id,): (Uuid,) = sqlx::query_as(
+        r#"
+        INSERT INTO users (username, password_hash, nickname, is_admin)
+        VALUES ($1, $2, $3, TRUE)
+        RETURNING id
+        "#,
+    )
+    .bind(&uname)
+    .bind(&hash)
+    .bind("bind-test-admin")
+    .fetch_one(&state.pool)
+    .await
+    .expect("insert admin user");
+
+    let (status, login) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/password",
+        None,
+        Some(json!({ "username": uname, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login}");
+    assert_eq!(login["is_admin"], true);
+    let admin_token = login["token"].as_str().unwrap();
+
+    // Bind a WeChat openid (dev mode) as admin.
+    let openid = format!("bind_openid_{}", Uuid::new_v4().to_string().replace('-', ""));
+    let (status, bind) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/bind-wechat",
+        Some(admin_token),
+        Some(json!({ "openid": openid })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{bind}");
+    assert_eq!(bind["bound"], true);
+    assert_eq!(bind["promoted"], false);
+    assert!(bind["openid_masked"].as_str().unwrap_or("").contains('…'));
+
+    // WeChat login for that openid now yields an admin session.
+    let (status, wechat) = json_request(
+        &app,
+        "POST",
+        "/api/v1/auth/dev-login",
+        None,
+        Some(json!({ "openid": openid, "nickname": "微信管理员" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{wechat}");
+    assert_eq!(wechat["is_admin"], true);
+    let wechat_token = wechat["token"].as_str().unwrap();
+
+    let (status, overview) = json_request(
+        &app,
+        "GET",
+        "/api/v1/admin/overview",
+        Some(wechat_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+
+    // Rebinding the same openid is idempotent and reports promoted.
+    let (status, rebind) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/bind-wechat",
+        Some(admin_token),
+        Some(json!({ "openid": openid })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rebind}");
+    assert_eq!(rebind["promoted"], true);
+
+    // Without admin auth the endpoint is rejected.
+    let (status, denied) = json_request(
+        &app,
+        "POST",
+        "/api/v1/admin/bind-wechat",
+        None,
+        Some(json!({ "openid": "nobody" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{denied}");
+
+    // Cleanup both users.
+    cleanup_user(&state.pool, admin_id).await;
+    cleanup_user(
+        &state.pool,
+        wechat["user_id"].as_str().unwrap().parse().unwrap(),
+    )
+    .await;
 }

@@ -20,13 +20,13 @@ pub const INTERVIEWER_SYSTEM_PROMPT: &str = r#"你是一位资深口述史采访
 - 只输出要对讲述人说的下一句（可含一句很短的回应 + 一个问题）。
 - 不要输出 JSON、标题、分点、旁白或你的思考过程。"#;
 
-pub async fn next_question(
-    llm: &dyn LlmClient,
+/// Build the interviewer prompt + recent history window (pure; shared by sync and streaming paths).
+pub fn build_interviewer_messages(
     topic: &str,
     subject_name: &str,
     history: &[InterviewMessage],
     user_content: &str,
-) -> anyhow::Result<LlmCompletion> {
+) -> Vec<ChatMessage> {
     let mut messages = Vec::new();
     messages.push(ChatMessage {
         role: "system".into(),
@@ -62,9 +62,20 @@ pub async fn next_question(
             content,
         });
     }
+    messages
+}
 
-    // Same model; cap output + disable thinking to cut 20–50s CoT waste.
-    llm.complete_with(&messages, CompleteOptions::interview())
+pub async fn next_question(
+    llm: &dyn LlmClient,
+    topic: &str,
+    subject_name: &str,
+    history: &[InterviewMessage],
+    user_content: &str,
+    enable_thinking: bool,
+) -> anyhow::Result<LlmCompletion> {
+    let messages = build_interviewer_messages(topic, subject_name, history, user_content);
+    // Same model; cap output. Thinking optional (latency trade-off).
+    llm.complete_with(&messages, CompleteOptions::interview(enable_thinking))
         .await
 }
 

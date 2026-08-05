@@ -16,6 +16,7 @@ pub struct AiConfigView {
     pub model: String,
     pub mode: String,
     pub has_live_client: bool,
+    pub enable_thinking: bool,
 }
 
 #[derive(Clone)]
@@ -24,16 +25,23 @@ pub struct LlmRuntime {
     pub api_base: Option<String>,
     pub api_key: Option<String>,
     pub model: String,
+    pub enable_thinking: bool,
 }
 
 impl LlmRuntime {
-    pub fn from_parts(api_base: Option<String>, api_key: Option<String>, model: String) -> Self {
+    pub fn from_parts(
+        api_base: Option<String>,
+        api_key: Option<String>,
+        model: String,
+        enable_thinking: bool,
+    ) -> Self {
         let client = build_llm_client(api_base.as_deref(), api_key.as_deref(), &model);
         Self {
             client,
             api_base,
             api_key,
             model,
+            enable_thinking,
         }
     }
 
@@ -53,6 +61,7 @@ impl LlmRuntime {
             model: self.model.clone(),
             mode: self.client.kind().to_string(),
             has_live_client: self.client.kind() != "fallback",
+            enable_thinking: self.enable_thinking,
         }
     }
 }
@@ -77,6 +86,14 @@ pub async fn seed_settings_from_env(pool: &PgPool, config: &Config) -> AppResult
     if !config.llm_model.trim().is_empty() {
         upsert_setting(pool, "llm_model", config.llm_model.trim(), false).await?;
     }
+    // Seed thinking flag once; admin UI can override later.
+    upsert_setting(
+        pool,
+        "llm_enable_thinking",
+        if config.llm_enable_thinking { "1" } else { "0" },
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -140,12 +157,18 @@ pub async fn load_runtime(pool: &PgPool, fallback: &Config) -> AppResult<LlmRunt
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| fallback.llm_model.trim().to_string());
 
-    let runtime = LlmRuntime::from_parts(base, key, model);
+    let enable_thinking = get_setting(pool, "llm_enable_thinking")
+        .await?
+        .map(|s| matches!(s.trim(), "1" | "true" | "TRUE" | "yes"))
+        .unwrap_or(fallback.llm_enable_thinking);
+
+    let runtime = LlmRuntime::from_parts(base, key, model, enable_thinking);
     tracing::info!(
         mode = runtime.client.kind(),
         model = %runtime.model,
         base_set = runtime.api_base.is_some(),
         key_set = runtime.api_key.is_some(),
+        enable_thinking,
         "LLM runtime loaded"
     );
     Ok(runtime)
@@ -166,6 +189,7 @@ pub async fn save_ai_config(
     api_key: Option<String>,
     model: Option<String>,
     clear_key: bool,
+    enable_thinking: Option<bool>,
 ) -> AppResult<AiConfigView> {
     let current = runtime.read().await.clone();
     let new_base = api_base
@@ -188,6 +212,7 @@ pub async fn save_ai_config(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or(current.model);
+    let new_thinking = enable_thinking.unwrap_or(current.enable_thinking);
 
     upsert_setting(
         pool,
@@ -198,8 +223,15 @@ pub async fn save_ai_config(
     .await?;
     upsert_setting(pool, "llm_api_key", new_key.as_deref().unwrap_or(""), true).await?;
     upsert_setting(pool, "llm_model", &new_model, true).await?;
+    upsert_setting(
+        pool,
+        "llm_enable_thinking",
+        if new_thinking { "1" } else { "0" },
+        true,
+    )
+    .await?;
 
-    let next = LlmRuntime::from_parts(new_base, new_key, new_model);
+    let next = LlmRuntime::from_parts(new_base, new_key, new_model, new_thinking);
     let view = next.view();
     *runtime.write().await = next;
     Ok(view)

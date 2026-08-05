@@ -1,4 +1,4 @@
-<navigation-bar title="回忆录正文" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="回忆录正文" back="{{true}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view wx:if="{{loading}}" class="state">加载中…</view>
@@ -61,6 +61,9 @@
       <text wx:if="{{activeHasInterview && !activeContent}}" class="action-hint">
         生成不会清空对话，只整理成章节文字。
       </text>
+      <button class="btn-secondary storybox-btn" bindtap="onOpenStoryBox">
+        故事箱 · 随机采访 · 大事年谱
+      </button>
     </scroll-view>
   </block>
 </view>

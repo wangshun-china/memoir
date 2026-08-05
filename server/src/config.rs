@@ -14,6 +14,9 @@ pub struct Config {
     pub llm_api_base: Option<String>,
     pub llm_api_key: Option<String>,
     pub llm_model: String,
+    /// DashScope/Qwen hybrid thinking. Many current models default to thinking on;
+    /// enable it for richer reasoning, disable for maximum latency.
+    pub llm_enable_thinking: bool,
 }
 
 impl Config {
@@ -38,6 +41,10 @@ impl Config {
             llm_api_base: env::var("LLM_API_BASE").ok().filter(|s| !s.is_empty()),
             llm_api_key: env::var("LLM_API_KEY").ok().filter(|s| !s.is_empty()),
             llm_model: env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
+            llm_enable_thinking: matches!(
+                env::var("LLM_ENABLE_THINKING").as_deref(),
+                Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Err(_)
+            ),
         })
     }
 

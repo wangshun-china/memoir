@@ -33,6 +33,7 @@ services:
       LLM_API_BASE: ${LLM_API_BASE:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING:-1}
       WECHAT_APP_ID: ${WECHAT_APP_ID:-}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       RUST_LOG: ${RUST_LOG:-info}

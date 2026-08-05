@@ -1,4 +1,4 @@
-<navigation-bar title="创建回忆录" back="{{true}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="创建回忆录" back="{{true}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view class="steps">

@@ -1,4 +1,4 @@
-<navigation-bar title="我的" back="{{false}}" color="black" background="#F4EFE4"></navigation-bar>
+<navigation-bar title="我的" back="{{false}}" color="black" background="#F7F5EE"></navigation-bar>
 
 <view class="page">
   <view wx:if="{{!loggedIn}}" class="profile-card">

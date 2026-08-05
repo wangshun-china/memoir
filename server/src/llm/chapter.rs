@@ -27,6 +27,7 @@ pub async fn generate_chapter_draft(
     topic: &str,
     subject_name: &str,
     history: &[InterviewMessage],
+    enable_thinking: bool,
 ) -> anyhow::Result<LlmCompletion> {
     let transcript = format_transcript_capped(history, CHAPTER_TRANSCRIPT_CHAR_CAP);
     let messages = vec![
@@ -41,7 +42,7 @@ pub async fn generate_chapter_draft(
             ),
         },
     ];
-    llm.complete_with(&messages, CompleteOptions::chapter())
+    llm.complete_with(&messages, CompleteOptions::chapter(enable_thinking))
         .await
 }
 

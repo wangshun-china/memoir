@@ -22,9 +22,11 @@ chmod +x scripts/*.sh deploy/deploy.sh
 | `status` | 查看两端 compose 状态与当前 `env.ts` |
 
 ```bash
-./scripts/miniprogram-env.sh local
-./scripts/miniprogram-env.sh remote
-./scripts/miniprogram-env.sh stop
+./scripts/miniprogram-env.sh local          # 关远程 → 开本地(已开则跳过) → env 本地
+./scripts/miniprogram-env.sh local stop     # 只关本地
+./scripts/miniprogram-env.sh remote         # 关本地 → 开远程(已开则跳过) → env 远程
+./scripts/miniprogram-env.sh remote stop    # 只关远程
+./scripts/miniprogram-env.sh stop           # 本地+远程全关
 ./scripts/miniprogram-env.sh status
 ```
 
@@ -35,12 +37,13 @@ chmod +x scripts/*.sh deploy/deploy.sh
 - 小程序：优先写入 Windows **局域网 IP**（真机需再跑 `scripts/win_expose_api.ps1`）
 - PostgreSQL：`127.0.0.1:5433`
 
-远程 SSH（可选，写在 `.env.development`，勿提交密码）：
+远程 SSH（可选，写在 `.env.development`，勿提交密钥/密码）：
 
 ```bash
 REMOTE_SSH_HOST=120.26.186.0
 REMOTE_SSH_USER=root
-# REMOTE_SSH_PASS=...   # 有 sshpass 时可用；否则用本机 SSH 密钥
+REMOTE_SSH_KEY=~/.ssh/memoir_github_actions   # 推荐：与部署同一私钥
+# REMOTE_SSH_PASS=...                        # 备选；需 WSL: sudo apt install -y sshpass
 ```
 
 本地脚本会读取 Windows 机器级的 `LOCAL_AGENT_BASE_URL` /

@@ -1,0 +1,72 @@
+<navigation-bar title="故事箱与大事年谱" back="{{true}}" color="black" background="#F7F5EE"></navigation-bar>
+
+<scroll-view scroll-y class="page">
+  <view class="hero card-surface">
+    <text class="hero-title">想到哪里，说到哪里</text>
+    <text class="hero-desc">每次聊一个小故事。确认后，它会自动进入年谱和合适的章节。</text>
+    <button class="btn-primary" bindtap="onStartRandom">随机聊一个</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="state">正在打开故事箱…</view>
+  <view wx:elif="{{error}}" class="state error">{{error}}</view>
+
+  <block wx:else>
+    <view wx:if="{{timeline.length}}" class="timeline card-surface">
+      <text class="section-title">人生大事年谱</text>
+      <view wx:for="{{timeline}}" wx:key="id" class="timeline-item">
+        <view class="timeline-dot"></view>
+        <view class="timeline-copy">
+          <text class="timeline-time">{{item.timeLabel}}</text>
+          <text class="timeline-title">{{item.title}}</text>
+          <text class="timeline-summary">{{item.summary}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section-head">
+      <text class="section-title">散落的故事</text>
+      <text class="section-meta">已确认 {{confirmedCount}} / {{stories.length}}</text>
+    </view>
+
+    <view wx:if="{{!stories.length}}" class="empty card-surface">
+      <text class="empty-title">故事箱还是空的</text>
+      <text class="empty-desc">点“随机聊一个”，回答几轮后把这段回忆收进来。</text>
+    </view>
+
+    <view
+      wx:for="{{stories}}"
+      wx:key="id"
+      class="story-card card-surface {{item.confirmed ? 'confirmed' : ''}}"
+    >
+      <view class="story-top">
+        <text class="story-time">{{item.timeLabel}}</text>
+        <text class="story-status">{{item.confirmed ? '已确认' : '待确认'}}</text>
+      </view>
+      <text class="story-title">{{item.title}}</text>
+      <text class="story-summary">{{item.summary}}</text>
+      <text wx:if="{{item.primary_chapter_title}}" class="story-chapter">归入 · {{item.primary_chapter_title}}</text>
+      <text wx:if="{{item.tagsText}}" class="story-tags">{{item.tagsText}}</text>
+      <text wx:if="{{item.missingText}}" class="story-missing">还可补充：{{item.missingText}}</text>
+      <view class="source-line">依据 {{item.source_count}} 条原始对话整理</view>
+      <button
+        wx:if="{{!item.confirmed}}"
+        class="btn-secondary confirm-btn"
+        loading="{{confirmingId === item.id}}"
+        disabled="{{!!confirmingId}}"
+        data-id="{{item.id}}"
+        bindtap="onConfirm"
+      >确认这段故事</button>
+    </view>
+
+    <view wx:if="{{stories.length}}" class="organize card-surface">
+      <text class="organize-title">把故事组织起来</text>
+      <text class="organize-desc">按模糊或明确时间形成大事年谱，并把已确认故事整理成章节草稿。</text>
+      <button
+        class="btn-primary"
+        loading="{{organizing}}"
+        disabled="{{!confirmedCount || organizing}}"
+        bindtap="onOrganize"
+      >整理我的回忆</button>
+    </view>
+  </block>
+</scroll-view>

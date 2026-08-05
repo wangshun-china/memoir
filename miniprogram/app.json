@@ -5,6 +5,7 @@
     "pages/create/create",
     "pages/interview/interview",
     "pages/reader/reader",
+    "pages/storybox/storybox",
     "pages/admin/admin"
   ],
   "window": {

@@ -27,6 +27,106 @@ pub fn router() -> Router<AppState> {
         .route("/admin/ai-config", get(get_ai_config).put(put_ai_config))
         .route("/admin/ai-config/test", post(test_ai))
         .route("/admin/ai-usage", get(ai_usage))
+        .route("/admin/bind-wechat", post(bind_wechat))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BindWechatRequest {
+    /// wx.login() js_code exchanged for the admin's WeChat openid.
+    pub code: Option<String>,
+    /// Dev-only: direct openid when ALLOW_DEV_LOGIN=1 (mirrors /auth/dev-login).
+    pub openid: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BindWechatResponse {
+    pub bound: bool,
+    pub user_id: Uuid,
+    /// Masked openid so the UI can show which account is bound.
+    pub openid_masked: String,
+    /// true when the WeChat account already existed as a normal user and was promoted.
+    pub promoted: bool,
+}
+
+fn mask_openid(openid: &str) -> String {
+    if openid.len() <= 6 {
+        format!("{}***", &openid[..openid.len().min(2)])
+    } else {
+        format!("{}…{}", &openid[..4], &openid[openid.len() - 4..])
+    }
+}
+
+/// Promote the caller's WeChat account to admin, so they can sign in to the
+/// admin console with 微信一键登录 instead of account + password.
+/// Only existing admins (legacy admin_accounts OR users.is_admin) may call this.
+async fn bind_wechat(
+    State(state): State<AppState>,
+    _admin: AdminAuth,
+    Json(body): Json<BindWechatRequest>,
+) -> AppResult<Json<BindWechatResponse>> {
+    if body.code.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none()
+        && body.openid.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none()
+    {
+        return Err(AppError::BadRequest("code is required".into()));
+    }
+
+    // Normal path: exchange wx.login code → openid.
+    // Dev path: ALLOW_DEV_LOGIN=1 accepts a raw openid (mirrors /auth/dev-login).
+    let openid = if let Some(code) = body.code.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let (app_id, app_secret) = match (
+            state.config.wechat_app_id.as_ref(),
+            state.config.wechat_app_secret.as_ref(),
+        ) {
+            (Some(a), Some(s)) => (a, s),
+            _ => {
+                return Err(AppError::BadRequest(
+                    "服务器未配置微信登录（WECHAT_APP_ID / WECHAT_APP_SECRET）".into(),
+                ));
+            }
+        };
+        crate::auth::exchange_wechat_code(app_id, app_secret, code).await?
+    } else {
+        let raw = body.openid.as_deref().map(str::trim).unwrap_or("");
+        if !state.config.allow_dev_login {
+            return Err(AppError::Forbidden(
+                "开发登录未启用（ALLOW_DEV_LOGIN）".into(),
+            ));
+        }
+        raw.to_string()
+    };
+
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM users WHERE wechat_openid = $1",
+    )
+    .bind(&openid)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let (user_id, promoted) = if let Some((id,)) = existing {
+        sqlx::query(
+            "UPDATE users SET is_admin = TRUE, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+        (id, true)
+    } else {
+        let row: (Uuid,) = sqlx::query_as(
+            "INSERT INTO users (wechat_openid, nickname, is_admin) VALUES ($1, '微信用户', TRUE) RETURNING id",
+        )
+        .bind(&openid)
+        .fetch_one(&state.pool)
+        .await?;
+        (row.0, false)
+    };
+
+    tracing::info!(%openid, %user_id, promoted, "admin bound WeChat account");
+    Ok(Json(BindWechatResponse {
+        bound: true,
+        user_id,
+        openid_masked: mask_openid(&openid),
+        promoted,
+    }))
 }
 
 #[derive(Debug, Serialize)]
@@ -509,6 +609,7 @@ pub struct PutAiConfigRequest {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub clear_api_key: Option<bool>,
+    pub enable_thinking: Option<bool>,
 }
 
 async fn put_ai_config(
@@ -523,6 +624,7 @@ async fn put_ai_config(
         body.api_key,
         body.model,
         body.clear_api_key.unwrap_or(false),
+        body.enable_thinking,
     )
     .await?;
     Ok(Json(view))
@@ -554,10 +656,14 @@ async fn test_ai(
     let prompt = body
         .prompt
         .unwrap_or_else(|| "请用一句话自我介绍你是回忆录采访助手。".into());
-    let runtime = state.llm_runtime.read().await;
-    let client = runtime.client.clone();
-    let mode = client.kind().to_string();
-    drop(runtime);
+    let (client, mode, enable_thinking) = {
+        let runtime = state.llm_runtime.read().await;
+        (
+            runtime.client.clone(),
+            runtime.client.kind().to_string(),
+            runtime.enable_thinking,
+        )
+    };
 
     let messages = vec![
         ChatMessage {
@@ -571,7 +677,10 @@ async fn test_ai(
     ];
 
     match client
-        .complete_with(&messages, crate::llm::client::CompleteOptions::admin_test())
+        .complete_with(
+            &messages,
+            crate::llm::client::CompleteOptions::admin_test(enable_thinking),
+        )
         .await
     {
         Ok(comp) => {

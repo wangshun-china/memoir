@@ -101,6 +101,7 @@ jobs:
       LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_MODEL: ${{ secrets.LLM_MODEL || 'gpt-4o-mini' }}
+      LLM_ENABLE_THINKING: ${{ vars.LLM_ENABLE_THINKING || '1' }}
       WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
       WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
       GHCR_TOKEN: ${{ github.token }}
@@ -136,6 +137,7 @@ jobs:
             printf 'LLM_API_BASE=%s\n' "$LLM_API_BASE"
             printf 'LLM_API_KEY=%s\n' "$LLM_API_KEY"
             printf 'LLM_MODEL=%s\n' "$LLM_MODEL"
+            printf 'LLM_ENABLE_THINKING=%s\n' "$LLM_ENABLE_THINKING"
             printf 'WECHAT_APP_ID=%s\n' "$WECHAT_APP_ID"
             printf 'WECHAT_APP_SECRET=%s\n' "$WECHAT_APP_SECRET"
           } > .deploy/runtime.env
