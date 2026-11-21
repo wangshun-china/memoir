@@ -53,7 +53,12 @@ services:
 
 volumes:
   memoir-pg-data:
-    name: memoir-pg-data
+    name: memoir-host-pg-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/memoir-data/postgres-data
 
 networks:
   memoir-net:

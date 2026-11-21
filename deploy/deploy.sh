@@ -12,6 +12,7 @@ PREVIOUS_RELEASE_ENV="$DEPLOY_DIR/.release.env.previous"
 die() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 
 [ -f "$COMPOSE_FILE" ] || die "Missing docker-compose.yml"
+mkdir -p /data/memoir-data/postgres-data
 [ -f "$RUNTIME_ENV" ] || die "Missing runtime .env"
 
 if [ -f "$NEXT_RELEASE_ENV" ]; then
