@@ -3,7 +3,7 @@
 生产目录：
 
 ```text
-/opt/memoir/deploy/
+~/deployments/memoir/
   docker-compose.yml
   deploy.sh
   .env
@@ -18,7 +18,7 @@
 手动检查：
 
 ```bash
-cd /opt/memoir/deploy
+cd ~/deployments/memoir
 docker compose --env-file .env --env-file .release.env ps
 curl -fsS http://172.17.0.1:18080/health
 ```

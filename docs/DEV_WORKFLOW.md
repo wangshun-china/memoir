@@ -7,7 +7,7 @@
 | 本地 WSL Docker | PostgreSQL、memoir-api | `.env.development` |
 | 微信开发者工具 | 小程序 | 只有 `API_BASE_URL` |
 | GitHub Actions | 测试、构建、部署 | GitHub Secrets |
-| 生产服务器 | PostgreSQL、memoir-api | Actions 生成的 `/opt/memoir/deploy/.env` |
+| 生产服务器 | PostgreSQL、memoir-api | Actions 生成的 `~/deployments/memoir/.env` |
 
 `LOCAL_AGENT_BASE_URL` 和 `LOCAL_AGENT_MODEL` 是本地 AI 配置，不上传到
 GitHub。生产环境使用 `LLM_API_BASE`、`LLM_API_KEY` 和 `LLM_MODEL`。

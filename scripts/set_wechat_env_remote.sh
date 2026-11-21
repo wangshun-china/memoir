@@ -8,7 +8,8 @@ set -euo pipefail
 
 HOST="${REMOTE_SSH_HOST:?set REMOTE_SSH_HOST}"
 USER="${REMOTE_SSH_USER:-root}"
-REMOTE_ENV="${REMOTE_ENV:-/opt/memoir/deploy/.env}"
+REMOTE_DIR="${REMOTE_DEPLOY_DIR:-deployments/memoir}"
+REMOTE_ENV="${REMOTE_ENV:-$REMOTE_DIR/.env}"
 APP_ID="${WECHAT_APP_ID:?set WECHAT_APP_ID}"
 APP_SECRET="${WECHAT_APP_SECRET:?set WECHAT_APP_SECRET}"
 
@@ -22,6 +23,7 @@ ssh_cmd() {
 
 ssh_cmd "${USER}@${HOST}" bash -s <<REMOTE
 set -euo pipefail
+DEPLOY_DIR='$REMOTE_DIR'
 ENV_FILE='$REMOTE_ENV'
 if [ ! -f "\$ENV_FILE" ]; then
   echo "Missing \$ENV_FILE — create deploy runtime env first" >&2
@@ -36,8 +38,8 @@ install -m 600 "\$tmp" "\$ENV_FILE"
 rm -f "\$tmp"
 echo "Updated WECHAT keys in \$ENV_FILE"
 # restart API if compose stack exists
-if [ -f /opt/memoir/deploy/docker-compose.yml ]; then
-  cd /opt/memoir/deploy
+if [ -f "\$DEPLOY_DIR/docker-compose.yml" ]; then
+  cd "\$DEPLOY_DIR"
   if [ -f .release.env ]; then
     docker compose --env-file .env --env-file .release.env up -d --force-recreate memoir-api
   else

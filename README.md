@@ -78,7 +78,7 @@ GitHub Actions 分为两个职责明确的 workflow：
 5. 最后验证目标环境健康检查；普通 push 不触发构建或部署。
 
 生产服务器只拉取镜像，不在服务器编译源码。生产运行文件位于
-`/opt/memoir/deploy`。
+`~/deployments/memoir`。
 
 详细说明见 [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md) 和
 [deploy/README.md](deploy/README.md)。

@@ -13,7 +13,7 @@
 #   REMOTE_SSH_USER   default: root
 #   REMOTE_SSH_KEY    private key path (preferred; e.g. ~/.ssh/memoir_github_actions)
 #   REMOTE_SSH_PASS   if set and sshpass exists, used when key is missing
-#   REMOTE_DEPLOY_DIR default: /opt/memoir/deploy
+#   REMOTE_DEPLOY_DIR default: deployments/memoir
 #   MEMOIR_PUBLIC_HEALTH_URL default: https://api.wangshun.work/health
 #
 # Also loads the same keys from .env.development when present.
@@ -102,7 +102,7 @@ load_env_file
 
 REMOTE_HOST="${REMOTE_SSH_HOST:-120.26.186.0}"
 REMOTE_USER="${REMOTE_SSH_USER:-root}"
-REMOTE_DIR="${REMOTE_DEPLOY_DIR:-/opt/memoir/deploy}"
+REMOTE_DIR="${REMOTE_DEPLOY_DIR:-deployments/memoir}"
 
 # Prefer explicit key, then common deploy key under ~/.ssh (copied from Windows if needed).
 resolve_remote_ssh_key() {

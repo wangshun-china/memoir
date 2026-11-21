@@ -143,10 +143,11 @@ jobs:
           } > .deploy/runtime.env
       - name: Install deployment files
         run: |
-          install -d -m 700 /opt/memoir/deploy
-          install -m 644 deploy/docker-compose.yml /opt/memoir/deploy/docker-compose.yml
-          install -m 700 deploy/deploy.sh /opt/memoir/deploy/deploy.sh
-          install -m 600 .deploy/runtime.env /opt/memoir/deploy/.env.next
+          DEPLOY_DIR="$HOME/deployments/memoir"
+          install -d -m 700 "$DEPLOY_DIR"
+          install -m 644 deploy/docker-compose.yml "$DEPLOY_DIR/docker-compose.yml"
+          install -m 700 deploy/deploy.sh "$DEPLOY_DIR/deploy.sh"
+          install -m 600 .deploy/runtime.env "$DEPLOY_DIR/.env.next"
       - name: Deploy with GHCR primary and Aliyun ACR fallback
         run: |
           export DOCKER_CONFIG="$(mktemp -d)"
@@ -167,9 +168,10 @@ jobs:
             exit 1
           fi
 
+          DEPLOY_DIR="$HOME/deployments/memoir"
           umask 077
-          printf 'MEMOIR_API_IMAGE=%s\n' "$RELEASE_IMAGE" > /opt/memoir/deploy/.release.env.next
-          cd /opt/memoir/deploy
+          printf 'MEMOIR_API_IMAGE=%s\n' "$RELEASE_IMAGE" > "$DEPLOY_DIR/.release.env.next"
+          cd "$DEPLOY_DIR"
           mv .env.next .env
           ./deploy.sh
       - name: Verify deployment
